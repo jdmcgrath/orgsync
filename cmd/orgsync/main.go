@@ -24,7 +24,7 @@ func main() {
 
 	org := flag.Arg(0)
 	p := tea.NewProgram(sync.NewModel(org))
-	if err := p.Start(); err != nil {
+	if _, err := p.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
