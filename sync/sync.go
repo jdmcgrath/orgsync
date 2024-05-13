@@ -90,15 +90,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 
-		// Update progress based on completed repositories
-		m.Progress.SetPercent(float64(completed) / float64(len(m.Repositories)))
-
-		// Check if all repositories are done
-		m.Done = completed == len(m.Repositories)
-		if m.Done {
-			return m, tea.Quit
+		// Determine if all repositories are done and quit if true
+		if m.Done = completed == len(m.Repositories); m.Done {
+			return m, tea.Batch(m.Progress.SetPercent(100), tea.Quit)
 		}
-		return m, nil
+		return m, m.Progress.SetPercent(float64(completed) / float64(len(m.Repositories)))
 
 	case progress.FrameMsg:
 		// Handle progress bar animation
