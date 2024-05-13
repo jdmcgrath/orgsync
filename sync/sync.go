@@ -3,6 +3,8 @@ package sync
 import (
 	"bytes"
 	"fmt"
+	"github.com/charmbracelet/bubbles/progress"
+	"github.com/charmbracelet/lipgloss"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -25,11 +27,28 @@ type Model struct {
 	Repositories []Repository
 	Done         bool
 	Errors       []error
+	Progress     progress.Model
 }
+
+var (
+	pendingStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#FFA500")) // Orange
+	doneStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("#00FF00")) // Green
+	errorStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("#FF0000")) // Red
+)
+
+const (
+	padding  = 2
+	maxWidth = 80
+)
 
 // NewModel creates a new instance of the Bubble Tea Model
 func NewModel(org string) Model {
-	return Model{Org: org}
+	progressBar := progress.New(progress.WithDefaultGradient(), progress.WithScaledGradient("#FFA500", "#00FF00")) // Gradient from orange to green
+	return Model{
+		Org:      org,
+		Progress: progressBar,
+	}
+
 }
 
 // Init is the initial command for Bubble Tea
@@ -44,28 +63,48 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.String() == "q" {
 			return m, tea.Quit
 		}
-
+	case tea.WindowSizeMsg:
+		m.Progress.Width = msg.Width - padding*2 - 4
+		if m.Progress.Width > maxWidth {
+			m.Progress.Width = maxWidth
+		}
+		return m, nil
 	case repositoriesFetchedMsg:
 		m.Repositories = msg.Repositories
 		return m, tea.Batch(m.syncRepositories()...)
-
 	case repositoryProcessedMsg:
+		// Update repository details in the model
 		for i := range m.Repositories {
 			if m.Repositories[i].Name == msg.Repo.Name {
 				m.Repositories[i].Done = true
 				m.Repositories[i].Err = msg.Err
-			}
-		}
-		m.Done = true
-		for _, repo := range m.Repositories {
-			if !repo.Done {
-				m.Done = false
 				break
 			}
 		}
+
+		// Calculate the number of completed repositories
+		completed := 0
+		for _, repo := range m.Repositories {
+			if repo.Done {
+				completed++
+			}
+		}
+
+		// Update progress based on completed repositories
+		m.Progress.SetPercent(float64(completed) / float64(len(m.Repositories)))
+
+		// Check if all repositories are done
+		m.Done = completed == len(m.Repositories)
 		if m.Done {
 			return m, tea.Quit
 		}
+		return m, nil
+
+	case progress.FrameMsg:
+		// Handle progress bar animation
+		progressModel, cmd := m.Progress.Update(msg)
+		m.Progress = progressModel.(progress.Model)
+		return m, cmd
 	}
 
 	return m, nil
@@ -74,31 +113,32 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // View renders the Model to the terminal
 func (m Model) View() string {
 	var builder strings.Builder
+	builder.WriteString("\n" + m.Progress.View() + "\n\n") // Render the progress bar
 
 	if m.Done {
 		builder.WriteString("All repositories processed.\n\n")
 		for _, repo := range m.Repositories {
 			if repo.Err != nil {
-				builder.WriteString(fmt.Sprintf("%s: %v\n", repo.Name, repo.Err))
+				builder.WriteString(errorStyle.Render(fmt.Sprintf("%s: %v\n", repo.Name, repo.Err)))
 			} else {
-				builder.WriteString(fmt.Sprintf("%s: Done\n", repo.Name))
+				builder.WriteString(doneStyle.Render(fmt.Sprintf("%s: Done\n", repo.Name)))
 			}
 		}
 	} else {
 		builder.WriteString(fmt.Sprintf("Repositories in organization '%s':\n", m.Org))
 		for _, repo := range m.Repositories {
-			status := "Pending"
+			status := pendingStyle.Render("Pending")
 			if repo.Done {
-				status = "Done"
 				if repo.Err != nil {
-					status = fmt.Sprintf("Error: %v", repo.Err)
+					status = errorStyle.Render(fmt.Sprintf("Error: %v", repo.Err))
+				} else {
+					status = doneStyle.Render("Done")
 				}
 			}
 			builder.WriteString(fmt.Sprintf("%s: %s\n", repo.Name, status))
 		}
-		builder.WriteString("\nPress 'q' to quit.")
 	}
-
+	builder.WriteString("\nPress 'q' to quit.")
 	return builder.String()
 }
 
@@ -163,25 +203,19 @@ func repoExists(repoDir string) bool {
 
 func cloneRepo(org, repo, repoDir string) error {
 	cmd := exec.Command("gh", "repo", "clone", fmt.Sprintf("%s/%s", org, repo), repoDir)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
 
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("failed to clone %s: %w", repo, err)
 	}
-	fmt.Printf("Cloned %s\n", repo)
 	return nil
 }
 
 func fetchRepo(repoDir, repo string) error {
 	cmd := exec.Command("git", "-C", repoDir, "fetch", "origin")
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
 
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("failed to fetch %s: %w", repo, err)
 	}
-	fmt.Printf("Fetched %s\n", repo)
 	return nil
 }
 
