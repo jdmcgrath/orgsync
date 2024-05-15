@@ -23,8 +23,8 @@ A command-line tool that keeps all repositories in a GitHub organization or from
 2. **Install OrgSync:**
     - Clone this repository
     ```bash
-    git clone https://github.com/yourusername/yourproject.git
-    cd yourproject
+    git clone https://github.com/jdmcgrath/orgsync.git
+    cd orgsync 
     ```
     - Build and install the OrgSync tool
     ```bash
@@ -56,7 +56,7 @@ orgsync openai
 1. Clone this repository
 ```bash
 git clone https://github.com/jdmcgrath/orgsync.git
-cd yourproject
+cd orgsync 
 ```
 2. Install dependencies
 ```bash
