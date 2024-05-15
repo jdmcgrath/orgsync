@@ -2,7 +2,7 @@
 
 A command-line tool that keeps all repositories in a GitHub organization or from a GitHub User up-to-date. Simply provide the GitHub organization/username, and OrgSync will clone new repositories and fetch changes for already cloned ones.
 
-![OrgSync Demo](https://via.placeholder.com/800x400.png?text=OrgSync+Demo)
+![OrgSync Demo](./orgsync.gif)
 
 ## Features
 - **Clone New Repos:** Clones all repositories that are not yet present locally.
@@ -55,12 +55,12 @@ orgsync openai
 ### Running locally
 1. Clone this repository
 ```bash
-git clone https://github.com/yourusername/yourproject.git
+git clone https://github.com/jdmcgrath/orgsync.git
 cd yourproject
 ```
 2. Install dependencies
 ```bash
-go get -u github.com/charmbracelet/bubbletea
+go get ./...
 ```
 3. Build and run
 ```bash
