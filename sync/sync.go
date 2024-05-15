@@ -165,11 +165,11 @@ func (m Model) View() string {
 
 	builder.WriteString(center(title) + "\n\n")
 	builder.WriteString(center(orgInfo) + "\n\n")
+	builder.WriteString(center(progressBar) + "\n\n")
 
 	if m.Done {
 		builder.WriteString(center("All operations completed. Press 'q' to quit.") + "\n")
 	} else {
-		builder.WriteString(center(progressBar) + "\n\n")
 		builder.WriteString(center(loadingSpinner) + "\n\n")
 		builder.WriteString(center(tableView) + "\n")
 		builder.WriteString(center("Press 'q' to quit.") + "\n")
