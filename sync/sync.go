@@ -4,56 +4,73 @@ import (
 	"bytes"
 	"fmt"
 	"github.com/charmbracelet/bubbles/progress"
+	"github.com/charmbracelet/bubbles/spinner"
+	"github.com/charmbracelet/bubbles/table"
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
-
-	tea "github.com/charmbracelet/bubbletea"
 )
 
-// Repository represents the state of a GitHub repository
 type Repository struct {
 	Name string
 	Done bool
 	Err  error
 }
 
-// Model represents the state of the Bubble Tea program
 type Model struct {
 	Org          string
 	Repositories []Repository
 	Done         bool
 	Errors       []error
 	Progress     progress.Model
+	Spinner      spinner.Model
+	Table        table.Model
+	Width        int
+	Height       int
 }
-
-var (
-	pendingStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#FFA500")) // Orange
-	doneStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("#00FF00")) // Green
-	errorStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("#FF0000")) // Red
-)
 
 const (
 	padding  = 2
 	maxWidth = 80
 )
 
-// NewModel creates a new instance of the Bubble Tea Model
+var (
+	titleStyle   = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#FFDD00")).Background(lipgloss.Color("#336699"))
+	pendingStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#FFA500")) // Orange
+	errorStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("#FF0000")) // Red
+	spinnerStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#FFFFFF"))
+	normalText   = lipgloss.NewStyle().Foreground(lipgloss.Color("#FFFFFF"))
+)
+
 func NewModel(org string) Model {
-	progressBar := progress.New(progress.WithDefaultGradient(), progress.WithScaledGradient("#FFA500", "#00FF00")) // Gradient from orange to green
+	progressBar := progress.New(progress.WithDefaultGradient(), progress.WithScaledGradient("#FFA500", "#00FF00"))
+	spn := spinner.New()
+	spn.Style = spinnerStyle
+
+	columns := []table.Column{
+		{Title: "Repository", Width: 30},
+		{Title: "Status", Width: 30},
+	}
+
+	tbl := table.New(
+		table.WithColumns(columns),
+		table.WithHeight(10),
+	)
+
 	return Model{
 		Org:      org,
 		Progress: progressBar,
+		Spinner:  spn,
+		Table:    tbl,
 	}
-
 }
 
-// Init is the initial command for Bubble Tea
 func (m Model) Init() tea.Cmd {
-	return m.fetchRepositories
+	return tea.Batch(m.fetchRepositories, m.Spinner.Tick)
 }
 
 // Update processes messages and updates the state of the Model
@@ -64,6 +81,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		}
 	case tea.WindowSizeMsg:
+		m.Width = msg.Width
+		m.Height = msg.Height
 		m.Progress.Width = msg.Width - padding*2 - 4
 		if m.Progress.Width > maxWidth {
 			m.Progress.Width = maxWidth
@@ -71,6 +90,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case repositoriesFetchedMsg:
 		m.Repositories = msg.Repositories
+		rows := make([]table.Row, len(m.Repositories))
+		for i, repo := range m.Repositories {
+			rows[i] = table.Row{repo.Name, pendingStyle.Render("Pending")}
+		}
+		m.Table.SetRows(rows)
 		return m, tea.Batch(m.syncRepositories()...)
 	case repositoryProcessedMsg:
 		// Update repository details in the model
@@ -80,6 +104,23 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.Repositories[i].Err = msg.Err
 				break
 			}
+		}
+
+		// Update the table
+		rows := m.Table.Rows()
+		for i, row := range rows {
+			if row[0] == msg.Repo.Name {
+				if msg.Err != nil {
+					rows[i][1] = errorStyle.Render(fmt.Sprintf("Error: %v", msg.Err))
+				}
+				break
+			}
+		}
+		m.Table.SetRows(rows)
+
+		// Remove completed repositories from the table
+		if msg.Err == nil {
+			m.Table.SetRows(removeRow(m.Table.Rows(), msg.Repo.Name))
 		}
 
 		// Calculate the number of completed repositories
@@ -92,10 +133,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Determine if all repositories are done and quit if true
 		if m.Done = completed == len(m.Repositories); m.Done {
-			return m, tea.Batch(m.Progress.SetPercent(100), tea.Quit)
+			return m, tea.Batch(m.Progress.SetPercent(100))
 		}
 		return m, m.Progress.SetPercent(float64(completed) / float64(len(m.Repositories)))
 
+	case spinner.TickMsg:
+		var cmd tea.Cmd
+		m.Spinner, cmd = m.Spinner.Update(msg)
+		return m, cmd
 	case progress.FrameMsg:
 		// Handle progress bar animation
 		progressModel, cmd := m.Progress.Update(msg)
@@ -106,35 +151,30 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// View renders the Model to the terminal
 func (m Model) View() string {
 	var builder strings.Builder
-	builder.WriteString("\n" + m.Progress.View() + "\n\n") // Render the progress bar
+	title := titleStyle.Render("OrgSync")
+	orgInfo := normalText.Render(fmt.Sprintf("Organization: %s", m.Org))
+	progressBar := m.Progress.View()
+	loadingSpinner := m.Spinner.View() + " Loading..."
+	tableView := m.Table.View()
+
+	center := func(s string) string {
+		return lipgloss.Place(m.Width, len(strings.Split(s, "\n")), lipgloss.Center, lipgloss.Center, s)
+	}
+
+	builder.WriteString(center(title) + "\n\n")
+	builder.WriteString(center(orgInfo) + "\n\n")
 
 	if m.Done {
-		builder.WriteString("All repositories processed.\n\n")
-		for _, repo := range m.Repositories {
-			if repo.Err != nil {
-				builder.WriteString(errorStyle.Render(fmt.Sprintf("%s: %v\n", repo.Name, repo.Err)))
-			} else {
-				builder.WriteString(doneStyle.Render(fmt.Sprintf("%s: Done\n", repo.Name)))
-			}
-		}
+		builder.WriteString(center("All operations completed. Press 'q' to quit.") + "\n")
 	} else {
-		builder.WriteString(fmt.Sprintf("Repositories in organization '%s':\n", m.Org))
-		for _, repo := range m.Repositories {
-			status := pendingStyle.Render("Pending")
-			if repo.Done {
-				if repo.Err != nil {
-					status = errorStyle.Render(fmt.Sprintf("Error: %v", repo.Err))
-				} else {
-					status = doneStyle.Render("Done")
-				}
-			}
-			builder.WriteString(fmt.Sprintf("%s: %s\n", repo.Name, status))
-		}
+		builder.WriteString(center(progressBar) + "\n\n")
+		builder.WriteString(center(loadingSpinner) + "\n\n")
+		builder.WriteString(center(tableView) + "\n")
+		builder.WriteString(center("Press 'q' to quit.") + "\n")
 	}
-	builder.WriteString("\nPress 'q' to quit.")
+
 	return builder.String()
 }
 
@@ -223,4 +263,13 @@ func syncRepo(org, repo string) error {
 	} else {
 		return cloneRepo(org, repo, repoDir)
 	}
+}
+
+func removeRow(rows []table.Row, repoName string) []table.Row {
+	for i, row := range rows {
+		if row[0] == repoName {
+			return append(rows[:i], rows[i+1:]...)
+		}
+	}
+	return rows
 }
