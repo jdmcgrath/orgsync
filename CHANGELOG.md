@@ -1,13 +1,5 @@
 # Changelog
 
-## [1.6.0](https://github.com/jdmcgrath/orgsync/compare/v1.5.0...v1.6.0) (2025-05-26)
-
-
-### Features
-
-* enhance release workflow with auto-merge and retry logic ([abff338](https://github.com/jdmcgrath/orgsync/commit/abff338162a9c62de4e19e7a3f11df843acd5d18))
-* update release workflows to include issue and project permissions ([ddf6bad](https://github.com/jdmcgrath/orgsync/commit/ddf6bad29b73f392a35f6a549b0c6c952464610c))
-
 ## [1.5.0](https://github.com/jdmcgrath/orgsync/compare/v1.4.0...v1.5.0) (2025-05-26)
 
 
