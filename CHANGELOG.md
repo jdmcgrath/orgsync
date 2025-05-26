@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.4.0](https://github.com/jdmcgrath/orgsync/compare/v1.3.0...v1.4.0) (2025-05-26)
+
+
+### Features
+
+* enhance repository synchronization with status updates ([ee70b90](https://github.com/jdmcgrath/orgsync/commit/ee70b90fb9414bee44f687be7f310ecb6ef88f5d))
+
 ## [1.3.0](https://github.com/jdmcgrath/orgsync/compare/v1.2.0...v1.3.0) (2025-05-26)
 
 
