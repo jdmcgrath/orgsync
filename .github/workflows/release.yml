@@ -5,18 +5,11 @@ on:
     branches: [ main ]
 
 jobs:
-  release:
+  test:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      pull-requests: write
-      issues: write
-      id-token: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Set up Go
         uses: actions/setup-go@v4
@@ -29,7 +22,35 @@ jobs:
       - name: Build
         run: go build -v ./...
 
-      - name: Release
-        uses: googleapis/release-please-action@v4
+  release:
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
         with:
-          release-type: go 
+          fetch-depth: 0
+
+      - name: Release Please
+        uses: googleapis/release-please-action@v4
+        id: release
+        with:
+          release-type: go
+          
+      - name: Auto-merge Release PR
+        if: steps.release.outputs.pr
+        run: |
+          echo "Release PR created: #${{ steps.release.outputs.pr }}"
+          # Enable auto-merge for the release PR
+          gh pr merge ${{ steps.release.outputs.pr }} --auto --squash --delete-branch
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          
+      - name: Release Created
+        if: steps.release.outputs.release_created
+        run: |
+          echo "🎉 Release ${{ steps.release.outputs.tag_name }} created!"
+          echo "Release URL: ${{ steps.release.outputs.html_url }}" 
