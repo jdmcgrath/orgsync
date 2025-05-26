@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.0](https://github.com/jdmcgrath/orgsync/compare/v1.1.0...v1.2.0) (2025-05-26)
+
+
+### Features
+
+* add unit tests and enhance repository synchronization model ([cfa3a6c](https://github.com/jdmcgrath/orgsync/commit/cfa3a6c5b4d3a35cc9ae01119d06a8336581a2c4))
+
 ## [1.1.0](https://github.com/jdmcgrath/orgsync/compare/v1.0.0...v1.1.0) (2025-05-26)
 
 
