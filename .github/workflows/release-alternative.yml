@@ -1,0 +1,138 @@
+name: Release (Alternative)
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.22'
+
+      - name: Run tests
+        run: go test -v ./...
+
+      - name: Build
+        run: go build -v ./...
+
+  release:
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Release Please
+        uses: googleapis/release-please-action@v4
+        id: release
+        with:
+          release-type: go
+          
+      - name: Handle Release PR
+        if: steps.release.outputs.pr
+        run: |
+          PR_NUMBER=$(echo '${{ steps.release.outputs.pr }}' | jq -r '.number')
+          echo "Release PR created: #${PR_NUMBER}"
+          
+          # Get PR details for debugging
+          echo "📋 PR Details:"
+          gh pr view ${PR_NUMBER} --json number,title,state,mergeable,mergeStateStatus
+          
+          # Check if PR is immediately mergeable
+          MERGEABLE=$(gh pr view ${PR_NUMBER} --json mergeable --jq '.mergeable')
+          MERGE_STATE=$(gh pr view ${PR_NUMBER} --json mergeStateStatus --jq '.mergeStateStatus')
+          
+          echo "Mergeable: $MERGEABLE"
+          echo "Merge State: $MERGE_STATE"
+          
+          if [ "$MERGEABLE" = "MERGEABLE" ] && [ "$MERGE_STATE" = "CLEAN" ]; then
+            echo "✅ PR is immediately mergeable, attempting direct merge..."
+            if gh pr merge ${PR_NUMBER} --squash --delete-branch; then
+              echo "✅ Direct merge successful"
+              exit 0
+            else
+              echo "❌ Direct merge failed, trying alternative approaches..."
+            fi
+          fi
+          
+          # Try auto-merge with timeout
+          echo "🔄 Enabling auto-merge..."
+          if gh pr merge ${PR_NUMBER} --auto --squash --delete-branch; then
+            echo "✅ Auto-merge enabled, waiting for completion..."
+            
+            # Wait for auto-merge with better monitoring
+            for i in {1..30}; do  # 5 minutes total (30 * 10s)
+              sleep 10
+              
+              STATE=$(gh pr view ${PR_NUMBER} --json state --jq '.state' 2>/dev/null || echo "ERROR")
+              
+              if [ "$STATE" = "MERGED" ]; then
+                echo "✅ Auto-merge completed successfully"
+                exit 0
+              elif [ "$STATE" = "CLOSED" ]; then
+                echo "❌ PR was closed without merging"
+                break
+              elif [ "$STATE" = "ERROR" ]; then
+                echo "❌ Error checking PR state"
+                break
+              fi
+              
+              echo "⏳ Auto-merge in progress... (attempt $i/30)"
+              
+              # Check merge state periodically
+              if [ $((i % 6)) -eq 0 ]; then  # Every minute
+                CURRENT_STATE=$(gh pr view ${PR_NUMBER} --json mergeStateStatus --jq '.mergeStateStatus' 2>/dev/null || echo "UNKNOWN")
+                echo "📊 Current merge state: $CURRENT_STATE"
+              fi
+            done
+            
+            echo "⚠️ Auto-merge timed out or failed"
+          else
+            echo "❌ Failed to enable auto-merge"
+          fi
+          
+          # Final fallback: Use GitHub API directly
+          echo "🔄 Attempting merge via GitHub API..."
+          RESPONSE=$(curl -s -X PUT \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${{ github.repository }}/pulls/${PR_NUMBER}/merge" \
+            -d '{"merge_method":"squash"}')
+          
+          if echo "$RESPONSE" | jq -e '.merged' > /dev/null 2>&1; then
+            echo "✅ API merge successful"
+            # Delete the branch
+            BRANCH_NAME=$(gh pr view ${PR_NUMBER} --json headRefName --jq '.headRefName')
+            gh api --method DELETE "repos/${{ github.repository }}/git/refs/heads/${BRANCH_NAME}" || echo "⚠️ Failed to delete branch"
+            exit 0
+          else
+            echo "❌ API merge failed"
+            echo "Response: $RESPONSE"
+          fi
+          
+          # If we get here, everything failed
+          echo "❌ All merge attempts failed"
+          echo "📋 Final PR Status:"
+          gh pr view ${PR_NUMBER} --json mergeable,mergeStateStatus,statusCheckRollup
+          exit 1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          
+      - name: Release Created
+        if: steps.release.outputs.release_created
+        run: |
+          echo "🎉 Release ${{ steps.release.outputs.tag_name }} created!"
+          echo "Release URL: ${{ steps.release.outputs.html_url }}" 

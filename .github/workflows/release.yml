@@ -46,7 +46,59 @@ jobs:
           PR_NUMBER=$(echo '${{ steps.release.outputs.pr }}' | jq -r '.number')
           echo "Release PR created: #${PR_NUMBER}"
           echo "Auto-merging release PR #${PR_NUMBER}"
-          gh pr merge ${PR_NUMBER} --auto --squash --delete-branch
+          
+          # First, try to enable auto-merge
+          if gh pr merge ${PR_NUMBER} --auto --squash --delete-branch; then
+            echo "✅ Auto-merge enabled successfully"
+            
+            # Wait for auto-merge to complete (with timeout)
+            echo "⏳ Waiting for auto-merge to complete..."
+            timeout=300  # 5 minutes timeout
+            elapsed=0
+            interval=10
+            
+            while [ $elapsed -lt $timeout ]; do
+              if gh pr view ${PR_NUMBER} --json state --jq '.state' | grep -q "MERGED"; then
+                echo "✅ PR successfully merged via auto-merge"
+                exit 0
+              elif gh pr view ${PR_NUMBER} --json state --jq '.state' | grep -q "CLOSED"; then
+                echo "❌ PR was closed without merging"
+                exit 1
+              fi
+              
+              echo "⏳ Still waiting... (${elapsed}s elapsed)"
+              sleep $interval
+              elapsed=$((elapsed + interval))
+            done
+            
+            echo "⚠️ Auto-merge timed out after ${timeout}s, attempting manual merge..."
+          else
+            echo "⚠️ Auto-merge failed, attempting manual merge..."
+          fi
+          
+          # Fallback: Try manual merge
+          echo "🔄 Attempting manual merge..."
+          max_retries=3
+          retry_count=0
+          
+          while [ $retry_count -lt $max_retries ]; do
+            if gh pr merge ${PR_NUMBER} --squash --delete-branch; then
+              echo "✅ Manual merge successful"
+              exit 0
+            else
+              retry_count=$((retry_count + 1))
+              echo "❌ Manual merge attempt ${retry_count} failed"
+              if [ $retry_count -lt $max_retries ]; then
+                echo "⏳ Waiting 30s before retry..."
+                sleep 30
+              fi
+            fi
+          done
+          
+          echo "❌ All merge attempts failed"
+          echo "📋 PR Status:"
+          gh pr view ${PR_NUMBER} --json mergeable,mergeStateStatus,statusCheckRollup
+          exit 1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           

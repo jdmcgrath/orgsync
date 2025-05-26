@@ -107,13 +107,6 @@ var (
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(lipgloss.Color("#764ba2"))
 
-	headerStyle = lipgloss.NewStyle().
-			Bold(true).
-			Foreground(lipgloss.Color("#E2E8F0")).
-			Background(lipgloss.Color("#2D3748")).
-			Padding(0, 1).
-			MarginBottom(1)
-
 	orgStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#A0AEC0")).
 			Background(lipgloss.Color("#1A202C")).
@@ -174,10 +167,6 @@ var (
 	tableRowStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#E2E8F0")).
 			Background(lipgloss.Color("#2D3748"))
-
-	tableAltRowStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("#E2E8F0")).
-				Background(lipgloss.Color("#1A202C"))
 
 	// Progress bar with custom gradient
 	progressBarStyle = lipgloss.NewStyle().
