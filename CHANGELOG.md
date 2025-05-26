@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.7.0](https://github.com/jdmcgrath/orgsync/compare/v1.6.0...v1.7.0) (2025-05-26)
+
+
+### Features
+
+* fix go sum ([3264fd5](https://github.com/jdmcgrath/orgsync/commit/3264fd505945216ad1919baf2e5a18793494c74d))
+
 ## [1.6.0](https://github.com/jdmcgrath/orgsync/compare/v1.5.0...v1.6.0) (2025-05-26)
 
 
