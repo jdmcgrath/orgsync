@@ -13,6 +13,8 @@
 
 ### Features
 
+* enhance release workflow with auto-merge and retry logic ([abff338](https://github.com/jdmcgrath/orgsync/commit/abff338162a9c62de4e19e7a3f11df843acd5d18))
+* update release workflows to include issue and project permissions ([ddf6bad](https://github.com/jdmcgrath/orgsync/commit/ddf6bad29b73f392a35f6a549b0c6c952464610c))
 * enhance repository status tests and add failure count functionality ([5837467](https://github.com/jdmcgrath/orgsync/commit/5837467fb480f2741834768a3580dd126fb5cddd))
 * Update go mod ([c10e0cf](https://github.com/jdmcgrath/orgsync/commit/c10e0cf9d864675875ad43f9442f0b6c28a2d93b))
 
@@ -22,6 +24,8 @@
 ### Features
 
 * enhance repository synchronization with status updates ([ee70b90](https://github.com/jdmcgrath/orgsync/commit/ee70b90fb9414bee44f687be7f310ecb6ef88f5d))
+* enhance repository status tests and add failure count functionality ([5837467](https://github.com/jdmcgrath/orgsync/commit/5837467fb480f2741834768a3580dd126fb5cddd))
+* Update go mod ([c10e0cf](https://github.com/jdmcgrath/orgsync/commit/c10e0cf9d864675875ad43f9442f0b6c28a2d93b))
 
 ## [1.3.0](https://github.com/jdmcgrath/orgsync/compare/v1.2.0...v1.3.0) (2025-05-26)
 
