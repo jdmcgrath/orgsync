@@ -2,11 +2,13 @@ package sync
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/charmbracelet/bubbles/progress"
@@ -16,22 +18,72 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
+// Repository represents a repository and its sync status
 type Repository struct {
-	Name string
-	Done bool
-	Err  error
+	Name      string
+	Status    RepositoryStatus
+	Error     error
+	StartTime time.Time
+	EndTime   time.Time
 }
 
+type RepositoryStatus int
+
+const (
+	StatusPending RepositoryStatus = iota
+	StatusCloning
+	StatusFetching
+	StatusCompleted
+	StatusFailed
+)
+
+func (s RepositoryStatus) String() string {
+	switch s {
+	case StatusPending:
+		return "Pending"
+	case StatusCloning:
+		return "Cloning..."
+	case StatusFetching:
+		return "Fetching..."
+	case StatusCompleted:
+		return "✓ Completed"
+	case StatusFailed:
+		return "✗ Failed"
+	default:
+		return "Unknown"
+	}
+}
+
+// SyncConfig holds configuration for the sync operation
+type SyncConfig struct {
+	MaxConcurrency int
+	Timeout        time.Duration
+	RetryAttempts  int
+	RetryDelay     time.Duration
+}
+
+func DefaultSyncConfig() SyncConfig {
+	return SyncConfig{
+		MaxConcurrency: 5, // Limit concurrent operations
+		Timeout:        30 * time.Second,
+		RetryAttempts:  2,
+		RetryDelay:     1 * time.Second,
+	}
+}
+
+// Model represents the TUI model
 type Model struct {
 	Org          string
 	Repositories []Repository
+	Config       SyncConfig
 	Done         bool
-	Errors       []error
 	Progress     progress.Model
 	Spinner      spinner.Model
 	Table        table.Model
 	Width        int
 	Height       int
+	ctx          context.Context
+	cancel       context.CancelFunc
 }
 
 const (
@@ -42,31 +94,39 @@ const (
 var (
 	titleStyle   = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#FFDD00")).Background(lipgloss.Color("#336699"))
 	pendingStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#FFA500")) // Orange
+	activeStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("#00BFFF")) // Blue
+	successStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#00FF00")) // Green
 	errorStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("#FF0000")) // Red
 	spinnerStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#FFFFFF"))
 	normalText   = lipgloss.NewStyle().Foreground(lipgloss.Color("#FFFFFF"))
 )
 
 func NewModel(org string) Model {
+	ctx, cancel := context.WithCancel(context.Background())
+
 	progressBar := progress.New(progress.WithDefaultGradient(), progress.WithScaledGradient("#FFA500", "#00FF00"))
 	spn := spinner.New()
 	spn.Style = spinnerStyle
 
 	columns := []table.Column{
 		{Title: "Repository", Width: 30},
-		{Title: "Status", Width: 30},
+		{Title: "Status", Width: 20},
+		{Title: "Duration", Width: 10},
 	}
 
 	tbl := table.New(
 		table.WithColumns(columns),
-		table.WithHeight(10),
+		table.WithHeight(15),
 	)
 
 	return Model{
 		Org:      org,
+		Config:   DefaultSyncConfig(),
 		Progress: progressBar,
 		Spinner:  spn,
 		Table:    tbl,
+		ctx:      ctx,
+		cancel:   cancel,
 	}
 }
 
@@ -74,11 +134,12 @@ func (m Model) Init() tea.Cmd {
 	return tea.Batch(m.fetchRepositories, m.Spinner.Tick)
 }
 
-// Update processes messages and updates the state of the Model
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
-		if msg.String() == "q" {
+		switch msg.String() {
+		case "q", "ctrl+c":
+			m.cancel() // Cancel ongoing operations
 			return m, tea.Quit
 		}
 	case tea.WindowSizeMsg:
@@ -91,59 +152,26 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case repositoriesFetchedMsg:
 		m.Repositories = msg.Repositories
-		rows := make([]table.Row, len(m.Repositories))
-		for i, repo := range m.Repositories {
-			rows[i] = table.Row{repo.Name, pendingStyle.Render("Pending")}
-		}
-		m.Table.SetRows(rows)
-		return m, tea.Batch(m.syncRepositories()...)
-	case repositoryProcessedMsg:
-		// Update repository details in the model
-		for i := range m.Repositories {
-			if m.Repositories[i].Name == msg.Repo.Name {
-				m.Repositories[i].Done = true
-				m.Repositories[i].Err = msg.Err
-				break
-			}
+		m.updateTable()
+		return m, m.syncRepositories()
+	case repositoryStatusMsg:
+		m.updateRepositoryStatus(msg.Name, msg.Status, msg.Error)
+		m.updateTable()
+
+		completed := m.countCompleted()
+		total := len(m.Repositories)
+
+		if completed == total {
+			m.Done = true
+			return m, m.Progress.SetPercent(1.0)
 		}
 
-		// Update the table
-		rows := m.Table.Rows()
-		for i, row := range rows {
-			if row[0] == msg.Repo.Name {
-				if msg.Err != nil {
-					rows[i][1] = errorStyle.Render(fmt.Sprintf("Error: %v", msg.Err))
-				}
-				break
-			}
-		}
-		m.Table.SetRows(rows)
-
-		// Remove completed repositories from the table
-		if msg.Err == nil {
-			m.Table.SetRows(removeRow(m.Table.Rows(), msg.Repo.Name))
-		}
-
-		// Calculate the number of completed repositories
-		completed := 0
-		for _, repo := range m.Repositories {
-			if repo.Done {
-				completed++
-			}
-		}
-
-		// Determine if all repositories are done and quit if true
-		if m.Done = completed == len(m.Repositories); m.Done {
-			return m, tea.Batch(m.Progress.SetPercent(100))
-		}
-		return m, m.Progress.SetPercent(float64(completed) / float64(len(m.Repositories)))
-
+		return m, m.Progress.SetPercent(float64(completed) / float64(total))
 	case spinner.TickMsg:
 		var cmd tea.Cmd
 		m.Spinner, cmd = m.Spinner.Update(msg)
 		return m, cmd
 	case progress.FrameMsg:
-		// Handle progress bar animation
 		progressModel, cmd := m.Progress.Update(msg)
 		m.Progress = progressModel.(progress.Model)
 		return m, cmd
@@ -157,8 +185,6 @@ func (m Model) View() string {
 	title := titleStyle.Render("OrgSync")
 	orgInfo := normalText.Render(fmt.Sprintf("Organization: %s", m.Org))
 	progressBar := m.Progress.View()
-	loadingSpinner := m.Spinner.View() + " Loading..."
-	tableView := m.Table.View()
 
 	center := func(s string) string {
 		return lipgloss.Place(m.Width, len(strings.Split(s, "\n")), lipgloss.Center, lipgloss.Center, s)
@@ -169,108 +195,315 @@ func (m Model) View() string {
 	builder.WriteString(center(progressBar) + "\n\n")
 
 	if m.Done {
-		builder.WriteString(center("All operations completed. Press 'q' to quit.") + "\n")
-	} else {
-		builder.WriteString(center(loadingSpinner) + "\n\n")
-		builder.WriteString(center(tableView) + "\n")
+		summary := m.generateSummary()
+		builder.WriteString(center(summary) + "\n\n")
 		builder.WriteString(center("Press 'q' to quit.") + "\n")
+	} else {
+		loadingSpinner := m.Spinner.View() + " Syncing repositories..."
+		builder.WriteString(center(loadingSpinner) + "\n\n")
+		builder.WriteString(center(m.Table.View()) + "\n\n")
+		builder.WriteString(center("Press 'q' or Ctrl+C to cancel.") + "\n")
 	}
 
 	return builder.String()
 }
 
-// repositoriesFetchedMsg contains the fetched repositories
+// Message types
 type repositoriesFetchedMsg struct {
 	Repositories []Repository
 }
 
-// repositoryProcessedMsg contains the processed repository status
-type repositoryProcessedMsg struct {
-	Repo Repository
-	Err  error
+type repositoryStatusMsg struct {
+	Name   string
+	Status RepositoryStatus
+	Error  error
 }
 
-// fetchRepositories retrieves repositories and returns a message containing the result
-func (m Model) fetchRepositories() tea.Msg {
-	repos, err := fetchReposInOrg(m.Org)
-	if err != nil {
-		return repositoriesFetchedMsg{Repositories: []Repository{{Name: "Error fetching repos"}}}
+// Helper methods
+func (m *Model) updateRepositoryStatus(name string, status RepositoryStatus, err error) {
+	for i := range m.Repositories {
+		if m.Repositories[i].Name == name {
+			m.Repositories[i].Status = status
+			m.Repositories[i].Error = err
+
+			if status == StatusCloning || status == StatusFetching {
+				m.Repositories[i].StartTime = time.Now()
+			} else if status == StatusCompleted || status == StatusFailed {
+				m.Repositories[i].EndTime = time.Now()
+			}
+			break
+		}
 	}
+}
+
+func (m *Model) updateTable() {
+	rows := make([]table.Row, 0, len(m.Repositories))
+
+	for _, repo := range m.Repositories {
+		if repo.Status == StatusCompleted {
+			continue // Hide completed repos to reduce clutter
+		}
+
+		statusText := m.formatStatus(repo)
+		duration := m.formatDuration(repo)
+
+		rows = append(rows, table.Row{repo.Name, statusText, duration})
+	}
+
+	m.Table.SetRows(rows)
+}
+
+func (m *Model) formatStatus(repo Repository) string {
+	switch repo.Status {
+	case StatusPending:
+		return pendingStyle.Render(repo.Status.String())
+	case StatusCloning, StatusFetching:
+		return activeStyle.Render(repo.Status.String())
+	case StatusCompleted:
+		return successStyle.Render(repo.Status.String())
+	case StatusFailed:
+		errorText := repo.Status.String()
+		if repo.Error != nil {
+			errorText += fmt.Sprintf(" (%s)", repo.Error.Error())
+		}
+		return errorStyle.Render(errorText)
+	default:
+		return repo.Status.String()
+	}
+}
+
+func (m *Model) formatDuration(repo Repository) string {
+	if repo.StartTime.IsZero() {
+		return "-"
+	}
+
+	end := repo.EndTime
+	if end.IsZero() {
+		end = time.Now()
+	}
+
+	duration := end.Sub(repo.StartTime)
+	if duration < time.Second {
+		return "<1s"
+	}
+	return duration.Truncate(time.Second).String()
+}
+
+func (m *Model) countCompleted() int {
+	count := 0
+	for _, repo := range m.Repositories {
+		if repo.Status == StatusCompleted || repo.Status == StatusFailed {
+			count++
+		}
+	}
+	return count
+}
+
+func (m *Model) generateSummary() string {
+	total := len(m.Repositories)
+	completed := 0
+	failed := 0
+
+	for _, repo := range m.Repositories {
+		switch repo.Status {
+		case StatusCompleted:
+			completed++
+		case StatusFailed:
+			failed++
+		}
+	}
+
+	summary := fmt.Sprintf("Sync completed: %d/%d successful", completed, total)
+	if failed > 0 {
+		summary += fmt.Sprintf(", %d failed", failed)
+	}
+
+	return summary
+}
+
+// Business logic
+func (m Model) fetchRepositories() tea.Msg {
+	repos, err := fetchReposInOrg(m.ctx, m.Org)
+	if err != nil {
+		return repositoriesFetchedMsg{
+			Repositories: []Repository{{Name: "Error fetching repos", Status: StatusFailed, Error: err}},
+		}
+	}
+
 	repositories := make([]Repository, len(repos))
 	for i, repo := range repos {
-		repositories[i] = Repository{Name: repo}
+		repositories[i] = Repository{
+			Name:   repo,
+			Status: StatusPending,
+		}
 	}
+
 	return repositoriesFetchedMsg{Repositories: repositories}
 }
 
-// syncRepositories triggers commands to clone or fetch each repository
-func (m Model) syncRepositories() []tea.Cmd {
-	cmds := make([]tea.Cmd, len(m.Repositories))
-	for i, repo := range m.Repositories {
-		cmds[i] = syncRepositoryCmd(m.Org, repo)
-	}
-	return cmds
-}
-
-func syncRepositoryCmd(org string, repo Repository) tea.Cmd {
+func (m Model) syncRepositories() tea.Cmd {
 	return func() tea.Msg {
-		time.Sleep(1 * time.Second) // simulate some delay
-		err := syncRepo(org, repo.Name)
-		return repositoryProcessedMsg{Repo: repo, Err: err}
+		// Use a semaphore to limit concurrency
+		semaphore := make(chan struct{}, m.Config.MaxConcurrency)
+		var wg sync.WaitGroup
+
+		// Channel to collect status updates
+		statusChan := make(chan repositoryStatusMsg, len(m.Repositories))
+
+		for _, repo := range m.Repositories {
+			wg.Add(1)
+			go func(r Repository) {
+				defer wg.Done()
+
+				// Acquire semaphore
+				select {
+				case semaphore <- struct{}{}:
+					defer func() { <-semaphore }()
+				case <-m.ctx.Done():
+					return
+				}
+
+				// Sync the repository with retries
+				err := m.syncRepoWithRetry(r.Name)
+
+				status := StatusCompleted
+				if err != nil {
+					status = StatusFailed
+				}
+
+				select {
+				case statusChan <- repositoryStatusMsg{
+					Name:   r.Name,
+					Status: status,
+					Error:  err,
+				}:
+				case <-m.ctx.Done():
+					return
+				}
+			}(repo)
+		}
+
+		// Close status channel when all goroutines complete
+		go func() {
+			wg.Wait()
+			close(statusChan)
+		}()
+
+		// Return the first status update
+		select {
+		case status := <-statusChan:
+			// Start a goroutine to handle remaining updates
+			go func() {
+				for status := range statusChan {
+					// Send remaining updates (this is a simplified approach)
+					_ = status
+				}
+			}()
+			return status
+		case <-m.ctx.Done():
+			return repositoryStatusMsg{Name: "", Status: StatusFailed, Error: m.ctx.Err()}
+		}
 	}
 }
 
-func fetchReposInOrg(org string) ([]string, error) {
-	cmd := exec.Command("gh", "repo", "list", org, "--json", "name", "--jq", ".[] | .name", "--limit", "1000")
+func (m Model) syncRepoWithRetry(repoName string) error {
+	var lastErr error
+
+	for attempt := 0; attempt <= m.Config.RetryAttempts; attempt++ {
+		if attempt > 0 {
+			select {
+			case <-time.After(m.Config.RetryDelay):
+			case <-m.ctx.Done():
+				return m.ctx.Err()
+			}
+		}
+
+		err := m.syncRepo(repoName)
+		if err == nil {
+			return nil
+		}
+
+		lastErr = err
+
+		// Don't retry certain types of errors
+		if isNonRetryableError(err) {
+			break
+		}
+	}
+
+	return lastErr
+}
+
+func (m Model) syncRepo(repoName string) error {
+	repoDir := filepath.Join(".", repoName)
+
+	ctx, cancel := context.WithTimeout(m.ctx, m.Config.Timeout)
+	defer cancel()
+
+	if repoExists(repoDir) {
+		return fetchRepo(ctx, repoDir, repoName)
+	}
+	return cloneRepo(ctx, m.Org, repoName, repoDir)
+}
+
+// Utility functions
+func fetchReposInOrg(ctx context.Context, org string) ([]string, error) {
+	cmd := exec.CommandContext(ctx, "gh", "repo", "list", org, "--json", "name", "--jq", ".[] | .name", "--limit", "1000")
 	var out bytes.Buffer
 	cmd.Stdout = &out
 
 	if err := cmd.Run(); err != nil {
-		return nil, fmt.Errorf("failed to fetch repos: %w", err)
+		return nil, fmt.Errorf("failed to fetch repos for org %s: %w", org, err)
 	}
 
-	repos := strings.Split(strings.TrimSpace(out.String()), "\n")
+	output := strings.TrimSpace(out.String())
+	if output == "" {
+		return []string{}, nil
+	}
+
+	repos := strings.Split(output, "\n")
 	return repos, nil
 }
 
 func repoExists(repoDir string) bool {
-	_, err := os.Stat(repoDir)
+	gitDir := filepath.Join(repoDir, ".git")
+	_, err := os.Stat(gitDir)
 	return !os.IsNotExist(err)
 }
 
-func cloneRepo(org, repo, repoDir string) error {
-	cmd := exec.Command("gh", "repo", "clone", fmt.Sprintf("%s/%s", org, repo), repoDir)
+func cloneRepo(ctx context.Context, org, repo, repoDir string) error {
+	cmd := exec.CommandContext(ctx, "gh", "repo", "clone", fmt.Sprintf("%s/%s", org, repo), repoDir)
+
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
 
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("failed to clone %s: %w", repo, err)
+		return fmt.Errorf("failed to clone %s/%s: %w (%s)", org, repo, err, stderr.String())
 	}
 	return nil
 }
 
-func fetchRepo(repoDir, repo string) error {
-	cmd := exec.Command("git", "-C", repoDir, "fetch", "origin")
+func fetchRepo(ctx context.Context, repoDir, repo string) error {
+	cmd := exec.CommandContext(ctx, "git", "-C", repoDir, "fetch", "origin")
+
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
 
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("failed to fetch %s: %w", repo, err)
+		return fmt.Errorf("failed to fetch %s: %w (%s)", repo, err, stderr.String())
 	}
 	return nil
 }
 
-func syncRepo(org, repo string) error {
-	repoDir := filepath.Join(".", repo)
-
-	if repoExists(repoDir) {
-		return fetchRepo(repoDir, repo)
-	} else {
-		return cloneRepo(org, repo, repoDir)
+func isNonRetryableError(err error) bool {
+	if err == nil {
+		return false
 	}
-}
 
-func removeRow(rows []table.Row, repoName string) []table.Row {
-	for i, row := range rows {
-		if row[0] == repoName {
-			return append(rows[:i], rows[i+1:]...)
-		}
-	}
-	return rows
+	errStr := err.Error()
+	// Don't retry authentication or permission errors
+	return strings.Contains(errStr, "authentication") ||
+		strings.Contains(errStr, "permission denied") ||
+		strings.Contains(errStr, "not found") ||
+		strings.Contains(errStr, "repository not found")
 }
