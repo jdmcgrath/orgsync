@@ -28,6 +28,8 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
+      issues: write
+      repository-projects: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -39,6 +41,7 @@ jobs:
         id: release
         with:
           release-type: go
+          token: ${{ secrets.GITHUB_TOKEN }}
           
       - name: Handle Release PR
         if: steps.release.outputs.pr
