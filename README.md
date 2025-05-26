@@ -15,29 +15,30 @@ A command-line tool that keeps all repositories in a GitHub organization or from
 - Git (installed and available in your PATH)
 
 ## Installation
-1. **Install GitHub CLI (`gh`):**
+
+### Quick Install (Recommended)
+```bash
+go install github.com/jdmcgrath/orgsync@latest
+```
+
+### Prerequisites
+- [GitHub CLI (`gh`)](https://cli.github.com/) - Install and authenticate:
    ```bash
    brew install gh
    gh auth login
    ```
-2. **Install OrgSync:**
-    - Clone this repository
-    ```bash
-    git clone https://github.com/jdmcgrath/orgsync.git
-    cd orgsync 
-    ```
-    - Build and install the OrgSync tool
-    ```bash
-    go install ./cmd/orgsync
-    ```
-    - Ensure that the GOBIN or GOPATH/bin directory is in your system's PATH:
-    ```bash
-    export PATH=$PATH:$(go env GOPATH)/bin
-    ```
-    - Verify that OrgSync is installed by running:
-    ```bash
-    orgsync --version
-    ```
+
+### Manual Installation
+If you prefer to build from source:
+1. Clone this repository:
+   ```bash
+   git clone https://github.com/jdmcgrath/orgsync.git
+   cd orgsync 
+   ```
+2. Build and install:
+   ```bash
+   go install .
+   ```
 
 ## Usage
 ### Basic Usage
@@ -68,10 +69,14 @@ go run ./cmd/orgsync <your-github-org>
 ```
 
 ### Contributing
-We welcome contributions! Here's how you can get involved:
+We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for details on:
+- Conventional commit format for automated releases
+- Development setup
+- Pull request process
 
-Fork this repository
-Create a feature branch: `git checkout -b my-new-feature`
-Commit your changes: `git commit -m 'Add some feature'`
-Push to your branch: `git push origin my-new-feature`
-Create a new Pull Request
+Quick start:
+1. Fork this repository
+2. Create a feature branch: `git checkout -b my-new-feature`
+3. Commit your changes using [conventional commits](https://www.conventionalcommits.org/): `git commit -m 'feat: add some feature'`
+4. Push to your branch: `git push origin my-new-feature`
+5. Create a new Pull Request
