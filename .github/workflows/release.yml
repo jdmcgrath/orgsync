@@ -43,9 +43,10 @@ jobs:
       - name: Auto-merge Release PR
         if: steps.release.outputs.pr
         run: |
-          echo "Release PR created: #${{ steps.release.outputs.pr }}"
-          # Enable auto-merge for the release PR
-          gh pr merge ${{ steps.release.outputs.pr }} --auto --squash --delete-branch
+          PR_NUMBER=$(echo '${{ steps.release.outputs.pr }}' | jq -r '.number')
+          echo "Release PR created: #${PR_NUMBER}"
+          echo "Auto-merging release PR #${PR_NUMBER}"
+          gh pr merge ${PR_NUMBER} --auto --squash --delete-branch
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           
