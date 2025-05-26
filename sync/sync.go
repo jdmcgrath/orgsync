@@ -40,17 +40,17 @@ const (
 func (s RepositoryStatus) String() string {
 	switch s {
 	case StatusPending:
-		return "Pending"
+		return "⏳ Pending"
 	case StatusCloning:
-		return "Cloning..."
+		return "📥 Cloning"
 	case StatusFetching:
-		return "Fetching..."
+		return "🔄 Fetching"
 	case StatusCompleted:
-		return "✓ Completed"
+		return "✅ Completed"
 	case StatusFailed:
-		return "✗ Failed"
+		return "❌ Failed"
 	default:
-		return "Unknown"
+		return "❓ Unknown"
 	}
 }
 
@@ -88,37 +88,151 @@ type Model struct {
 }
 
 const (
-	padding  = 2
-	maxWidth = 80
+	padding        = 2
+	minWidth       = 80
+	maxWidth       = 120
+	minColRepo     = 25
+	minColStatus   = 25
+	minColDuration = 12
 )
 
 var (
-	titleStyle   = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#FFDD00")).Background(lipgloss.Color("#336699"))
-	pendingStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#FFA500")) // Orange
-	activeStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("#00BFFF")) // Blue
-	successStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#00FF00")) // Green
-	errorStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("#FF0000")) // Red
-	spinnerStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#FFFFFF"))
-	normalText   = lipgloss.NewStyle().Foreground(lipgloss.Color("#FFFFFF"))
+	// Enhanced color palette with modern colors
+	titleStyle = lipgloss.NewStyle().
+			Bold(true).
+			Foreground(lipgloss.Color("#FFFFFF")).
+			Background(lipgloss.Color("#667eea")).
+			Padding(0, 2).
+			MarginBottom(1).
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color("#764ba2"))
+
+	headerStyle = lipgloss.NewStyle().
+			Bold(true).
+			Foreground(lipgloss.Color("#E2E8F0")).
+			Background(lipgloss.Color("#2D3748")).
+			Padding(0, 1).
+			MarginBottom(1)
+
+	orgStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#A0AEC0")).
+			Background(lipgloss.Color("#1A202C")).
+			Padding(0, 2).
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color("#4A5568")).
+			MarginBottom(1)
+
+	// Status styles with enhanced colors and effects
+	pendingStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#F6AD55")).
+			Background(lipgloss.Color("#2D2017")).
+			Padding(0, 1).
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color("#F6AD55"))
+
+	activeStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#63B3ED")).
+			Background(lipgloss.Color("#1A202C")).
+			Padding(0, 1).
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color("#63B3ED")).
+			Blink(true)
+
+	successStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#68D391")).
+			Background(lipgloss.Color("#1C2D1C")).
+			Padding(0, 1).
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color("#68D391"))
+
+	errorStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#FC8181")).
+			Background(lipgloss.Color("#2D1B1B")).
+			Padding(0, 1).
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color("#FC8181"))
+
+	spinnerStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#9F7AEA")).
+			Bold(true)
+
+	normalText = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#E2E8F0"))
+
+	subtleText = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#A0AEC0"))
+
+	// Table styles
+	tableHeaderStyle = lipgloss.NewStyle().
+				Bold(true).
+				Foreground(lipgloss.Color("#FFFFFF")).
+				Background(lipgloss.Color("#4A5568")).
+				Padding(0, 1).
+				Border(lipgloss.NormalBorder(), false, false, true, false).
+				BorderForeground(lipgloss.Color("#718096"))
+
+	tableRowStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#E2E8F0")).
+			Background(lipgloss.Color("#2D3748"))
+
+	tableAltRowStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("#E2E8F0")).
+				Background(lipgloss.Color("#1A202C"))
+
+	// Progress bar with custom gradient
+	progressBarStyle = lipgloss.NewStyle().
+				Border(lipgloss.RoundedBorder()).
+				BorderForeground(lipgloss.Color("#4A5568")).
+				Padding(0, 1)
+
+	// Summary styles
+	summaryStyle = lipgloss.NewStyle().
+			Bold(true).
+			Foreground(lipgloss.Color("#FFFFFF")).
+			Background(lipgloss.Color("#38A169")).
+			Padding(1, 2).
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color("#38A169")).
+			MarginTop(1)
+
+	instructionStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("#A0AEC0")).
+				Italic(true)
 )
 
 func NewModel(org string) Model {
 	ctx, cancel := context.WithCancel(context.Background())
 
-	progressBar := progress.New(progress.WithDefaultGradient(), progress.WithScaledGradient("#FFA500", "#00FF00"))
+	// Enhanced progress bar with custom gradient
+	progressBar := progress.New(
+		progress.WithScaledGradient("#667eea", "#764ba2"),
+		progress.WithoutPercentage(),
+	)
+
+	// Enhanced spinner
 	spn := spinner.New()
 	spn.Style = spinnerStyle
+	spn.Spinner = spinner.Dot
 
+	// Dynamic table columns - will be updated in window resize
 	columns := []table.Column{
-		{Title: "Repository", Width: 30},
-		{Title: "Status", Width: 20},
-		{Title: "Duration", Width: 10},
+		{Title: "📁 Repository", Width: minColRepo},
+		{Title: "🔄 Status", Width: minColStatus},
+		{Title: "⏱️  Duration", Width: minColDuration},
 	}
 
 	tbl := table.New(
 		table.WithColumns(columns),
 		table.WithHeight(15),
+		table.WithFocused(false),
 	)
+
+	// Enhanced table styling
+	tableStyles := table.DefaultStyles()
+	tableStyles.Header = tableHeaderStyle
+	tableStyles.Cell = tableRowStyle
+	tableStyles.Selected = tableRowStyle
+	tbl.SetStyles(tableStyles)
 
 	return Model{
 		Org:        org,
@@ -162,10 +276,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.Width = msg.Width
 		m.Height = msg.Height
-		m.Progress.Width = msg.Width - padding*2 - 4
-		if m.Progress.Width > maxWidth {
-			m.Progress.Width = maxWidth
+
+		// Dynamic column sizing based on terminal width
+		m.updateTableColumns()
+
+		// Update progress bar width
+		progressWidth := m.Width - padding*4
+		if progressWidth > maxWidth {
+			progressWidth = maxWidth
 		}
+		if progressWidth < minWidth {
+			progressWidth = minWidth
+		}
+		m.Progress.Width = progressWidth
+
 		return m, nil
 	case repositoriesFetchedMsg:
 		m.Repositories = msg.Repositories
@@ -197,29 +321,108 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m Model) View() string {
-	var builder strings.Builder
-	title := titleStyle.Render("OrgSync")
-	orgInfo := normalText.Render(fmt.Sprintf("Organization: %s", m.Org))
-	progressBar := m.Progress.View()
-
-	center := func(s string) string {
-		return lipgloss.Place(m.Width, len(strings.Split(s, "\n")), lipgloss.Center, lipgloss.Center, s)
+func (m *Model) updateTableColumns() {
+	if m.Width < minWidth {
+		return
 	}
 
+	// Calculate available width for table
+	availableWidth := m.Width - padding*4
+	if availableWidth > maxWidth {
+		availableWidth = maxWidth
+	}
+
+	// Distribute width among columns
+	// Repository: 40%, Status: 40%, Duration: 20%
+	repoWidth := max(minColRepo, int(float64(availableWidth)*0.4))
+	statusWidth := max(minColStatus, int(float64(availableWidth)*0.4))
+	durationWidth := max(minColDuration, int(float64(availableWidth)*0.2))
+
+	// Ensure we don't exceed available width
+	totalWidth := repoWidth + statusWidth + durationWidth
+	if totalWidth > availableWidth {
+		// Scale down proportionally
+		scale := float64(availableWidth) / float64(totalWidth)
+		repoWidth = max(minColRepo, int(float64(repoWidth)*scale))
+		statusWidth = max(minColStatus, int(float64(statusWidth)*scale))
+		durationWidth = max(minColDuration, int(float64(durationWidth)*scale))
+	}
+
+	columns := []table.Column{
+		{Title: "📁 Repository", Width: repoWidth},
+		{Title: "🔄 Status", Width: statusWidth},
+		{Title: "⏱️  Duration", Width: durationWidth},
+	}
+
+	m.Table.SetColumns(columns)
+}
+
+func max(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+func (m Model) View() string {
+	var builder strings.Builder
+
+	// Enhanced title with gradient background
+	title := titleStyle.Render("🚀 OrgSync")
+
+	// Organization info with better styling
+	orgInfo := orgStyle.Render(fmt.Sprintf("📊 Organization: %s", m.Org))
+
+	// Progress section with stats
+	completed := m.countCompleted()
+	total := len(m.Repositories)
+	failed := m.countFailed()
+
+	var progressText string
+	if total > 0 {
+		progressText = fmt.Sprintf("Progress: %d/%d repos", completed, total)
+		if failed > 0 {
+			progressText += fmt.Sprintf(" (%d failed)", failed)
+		}
+	} else {
+		progressText = "Fetching repositories..."
+	}
+
+	progressInfo := subtleText.Render(progressText)
+	progressBar := progressBarStyle.Render(m.Progress.View())
+
+	// Center content function with better spacing
+	center := func(s string) string {
+		return lipgloss.Place(m.Width, lipgloss.Height(s), lipgloss.Center, lipgloss.Center, s)
+	}
+
+	// Build the interface
 	builder.WriteString(center(title) + "\n\n")
 	builder.WriteString(center(orgInfo) + "\n\n")
+	builder.WriteString(center(progressInfo) + "\n")
 	builder.WriteString(center(progressBar) + "\n\n")
 
 	if m.Done {
 		summary := m.generateSummary()
-		builder.WriteString(center(summary) + "\n\n")
-		builder.WriteString(center("Press 'q' to quit.") + "\n")
+		summaryBox := summaryStyle.Render(summary)
+		builder.WriteString(center(summaryBox) + "\n\n")
+
+		instruction := instructionStyle.Render("Press 'q' to quit")
+		builder.WriteString(center(instruction) + "\n")
 	} else {
-		loadingSpinner := m.Spinner.View() + " Syncing repositories..."
+		// Enhanced loading indicator
+		loadingText := fmt.Sprintf("%s Syncing repositories...", m.Spinner.View())
+		loadingSpinner := spinnerStyle.Render(loadingText)
 		builder.WriteString(center(loadingSpinner) + "\n\n")
-		builder.WriteString(center(m.Table.View()) + "\n\n")
-		builder.WriteString(center("Press 'q' or Ctrl+C to cancel.") + "\n")
+
+		// Table with better spacing
+		if len(m.Repositories) > 0 {
+			tableView := m.Table.View()
+			builder.WriteString(center(tableView) + "\n\n")
+		}
+
+		instruction := instructionStyle.Render("Press 'q' or Ctrl+C to cancel")
+		builder.WriteString(center(instruction) + "\n")
 	}
 
 	return builder.String()
@@ -256,7 +459,7 @@ func (m *Model) updateRepositoryStatus(name string, status RepositoryStatus, err
 func (m *Model) updateTable() {
 	rows := make([]table.Row, 0, len(m.Repositories))
 
-	for _, repo := range m.Repositories {
+	for i, repo := range m.Repositories {
 		if repo.Status == StatusCompleted {
 			continue // Hide completed repos to reduce clutter
 		}
@@ -264,7 +467,22 @@ func (m *Model) updateTable() {
 		statusText := m.formatStatus(repo)
 		duration := m.formatDuration(repo)
 
-		rows = append(rows, table.Row{repo.Name, statusText, duration})
+		// Truncate repository name if too long
+		repoName := repo.Name
+		if len(repoName) > 30 {
+			repoName = repoName[:27] + "..."
+		}
+
+		row := table.Row{repoName, statusText, duration}
+
+		// Alternate row styling
+		if i%2 == 0 {
+			// Even rows use default style
+		} else {
+			// Odd rows use alternate style - this would need custom table implementation
+		}
+
+		rows = append(rows, row)
 	}
 
 	m.Table.SetRows(rows)
@@ -281,17 +499,22 @@ func (m *Model) formatStatus(repo Repository) string {
 	case StatusFailed:
 		errorText := repo.Status.String()
 		if repo.Error != nil {
-			errorText += fmt.Sprintf(" (%s)", repo.Error.Error())
+			// Truncate error message to fit in column
+			errMsg := repo.Error.Error()
+			if len(errMsg) > 30 {
+				errMsg = errMsg[:27] + "..."
+			}
+			errorText = fmt.Sprintf("❌ Failed: %s", errMsg)
 		}
 		return errorStyle.Render(errorText)
 	default:
-		return repo.Status.String()
+		return normalText.Render(repo.Status.String())
 	}
 }
 
 func (m *Model) formatDuration(repo Repository) string {
 	if repo.StartTime.IsZero() {
-		return "-"
+		return subtleText.Render("-")
 	}
 
 	end := repo.EndTime
@@ -300,16 +523,39 @@ func (m *Model) formatDuration(repo Repository) string {
 	}
 
 	duration := end.Sub(repo.StartTime)
+	var durationText string
+
 	if duration < time.Second {
-		return "<1s"
+		durationText = "<1s"
+	} else if duration < time.Minute {
+		durationText = fmt.Sprintf("%ds", int(duration.Seconds()))
+	} else {
+		durationText = fmt.Sprintf("%dm%ds", int(duration.Minutes()), int(duration.Seconds())%60)
 	}
-	return duration.Truncate(time.Second).String()
+
+	// Color code duration based on length
+	if duration > 30*time.Second {
+		return errorStyle.Render(durationText)
+	} else if duration > 10*time.Second {
+		return pendingStyle.Render(durationText)
+	}
+	return subtleText.Render(durationText)
 }
 
 func (m *Model) countCompleted() int {
 	count := 0
 	for _, repo := range m.Repositories {
 		if repo.Status == StatusCompleted || repo.Status == StatusFailed {
+			count++
+		}
+	}
+	return count
+}
+
+func (m *Model) countFailed() int {
+	count := 0
+	for _, repo := range m.Repositories {
+		if repo.Status == StatusFailed {
 			count++
 		}
 	}
@@ -330,9 +576,9 @@ func (m *Model) generateSummary() string {
 		}
 	}
 
-	summary := fmt.Sprintf("Sync completed: %d/%d successful", completed, total)
+	summary := fmt.Sprintf("🎉 Sync Complete! %d/%d successful", completed, total)
 	if failed > 0 {
-		summary += fmt.Sprintf(", %d failed", failed)
+		summary += fmt.Sprintf(" • %d failed", failed)
 	}
 
 	return summary
