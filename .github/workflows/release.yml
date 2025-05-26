@@ -42,11 +42,38 @@ jobs:
           
       - name: Auto-merge Release PR
         if: steps.release.outputs.pr
+        timeout-minutes: 10
         run: |
           PR_NUMBER=$(echo '${{ steps.release.outputs.pr }}' | jq -r '.number')
           echo "Release PR created: #${PR_NUMBER}"
           echo "Auto-merging release PR #${PR_NUMBER}"
-          gh pr merge ${PR_NUMBER} --auto --squash --delete-branch
+          
+          # Try auto-merge with timeout
+          echo "Attempting auto-merge..."
+          if timeout 300 gh pr merge ${PR_NUMBER} --auto --squash --delete-branch; then
+            echo "✅ Auto-merge successful!"
+          else
+            echo "⚠️ Auto-merge timed out or failed, trying direct merge..."
+            
+            # Wait a moment for any pending checks
+            sleep 10
+            
+            # Check PR status
+            PR_STATUS=$(gh pr view ${PR_NUMBER} --json mergeable,mergeStateStatus --jq '.mergeable,.mergeStateStatus')
+            echo "PR Status: $PR_STATUS"
+            
+            # Try direct merge as fallback
+            if gh pr merge ${PR_NUMBER} --squash --delete-branch; then
+              echo "✅ Direct merge successful!"
+            else
+              echo "❌ Both auto-merge and direct merge failed"
+              echo "PR #${PR_NUMBER} requires manual intervention"
+              
+              # Get more details for debugging
+              gh pr view ${PR_NUMBER} --json url,title,mergeable,mergeStateStatus
+              exit 1
+            fi
+          fi
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           
