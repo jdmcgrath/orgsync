@@ -2,6 +2,7 @@ package sync
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 )
@@ -11,11 +12,11 @@ func TestRepositoryStatus_String(t *testing.T) {
 		status   RepositoryStatus
 		expected string
 	}{
-		{StatusPending, "Pending"},
-		{StatusCloning, "Cloning..."},
-		{StatusFetching, "Fetching..."},
-		{StatusCompleted, "✓ Completed"},
-		{StatusFailed, "✗ Failed"},
+		{StatusPending, "⏳ Pending"},
+		{StatusCloning, "📥 Cloning"},
+		{StatusFetching, "🔄 Fetching"},
+		{StatusCompleted, "✅ Completed"},
+		{StatusFailed, "❌ Failed"},
 	}
 
 	for _, tt := range tests {
@@ -125,28 +126,57 @@ func TestModel_CountCompleted(t *testing.T) {
 	}
 }
 
+func TestModel_CountFailed(t *testing.T) {
+	model := NewModel("test-org")
+	model.Repositories = []Repository{
+		{Name: "repo1", Status: StatusCompleted},
+		{Name: "repo2", Status: StatusFailed},
+		{Name: "repo3", Status: StatusPending},
+		{Name: "repo4", Status: StatusFailed},
+	}
+
+	failed := model.countFailed()
+	expected := 2 // Two StatusFailed
+
+	if failed != expected {
+		t.Errorf("Expected %d failed repositories, got %d", expected, failed)
+	}
+}
+
 func TestModel_FormatDuration(t *testing.T) {
 	model := NewModel("test-org")
 
-	// Test with no start time
+	// Test with no start time - should return styled "-"
 	repo := Repository{Name: "test"}
 	duration := model.formatDuration(repo)
-	if duration != "-" {
-		t.Errorf("Expected '-' for no start time, got %s", duration)
+	// The function now returns styled text, so we need to check if it contains "-"
+	if !strings.Contains(duration, "-") {
+		t.Errorf("Expected duration to contain '-' for no start time, got %s", duration)
 	}
 
 	// Test with start time but no end time (ongoing)
 	repo.StartTime = time.Now().Add(-5 * time.Second)
 	duration = model.formatDuration(repo)
-	if duration == "-" {
-		t.Error("Expected duration for ongoing operation")
+	// Should contain "5s" somewhere in the styled output
+	if !strings.Contains(duration, "5s") {
+		t.Errorf("Expected duration to contain '5s' for 5 second duration, got %s", duration)
 	}
 
 	// Test with both start and end time
 	repo.EndTime = repo.StartTime.Add(3 * time.Second)
 	duration = model.formatDuration(repo)
-	if duration != "3s" {
-		t.Errorf("Expected '3s', got %s", duration)
+	// Should contain "3s" somewhere in the styled output
+	if !strings.Contains(duration, "3s") {
+		t.Errorf("Expected duration to contain '3s', got %s", duration)
+	}
+
+	// Test longer duration formatting
+	repo.StartTime = time.Now().Add(-90 * time.Second)
+	repo.EndTime = repo.StartTime.Add(90 * time.Second)
+	duration = model.formatDuration(repo)
+	// Should contain "1m30s" somewhere in the styled output
+	if !strings.Contains(duration, "1m30s") {
+		t.Errorf("Expected duration to contain '1m30s' for 90 second duration, got %s", duration)
 	}
 }
 
