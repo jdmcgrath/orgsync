@@ -84,6 +84,7 @@ type Model struct {
 	Height       int
 	ctx          context.Context
 	cancel       context.CancelFunc
+	statusChan   chan repositoryStatusMsg
 }
 
 const (
@@ -120,18 +121,34 @@ func NewModel(org string) Model {
 	)
 
 	return Model{
-		Org:      org,
-		Config:   DefaultSyncConfig(),
-		Progress: progressBar,
-		Spinner:  spn,
-		Table:    tbl,
-		ctx:      ctx,
-		cancel:   cancel,
+		Org:        org,
+		Config:     DefaultSyncConfig(),
+		Progress:   progressBar,
+		Spinner:    spn,
+		Table:      tbl,
+		ctx:        ctx,
+		cancel:     cancel,
+		statusChan: make(chan repositoryStatusMsg, 100),
 	}
 }
 
 func (m Model) Init() tea.Cmd {
-	return tea.Batch(m.fetchRepositories, m.Spinner.Tick)
+	return tea.Batch(m.fetchRepositories, m.Spinner.Tick, m.listenForUpdates())
+}
+
+// Listen for repository updates
+func (m Model) listenForUpdates() tea.Cmd {
+	return func() tea.Msg {
+		select {
+		case update, ok := <-m.statusChan:
+			if !ok {
+				return nil // Channel closed
+			}
+			return update
+		case <-m.ctx.Done():
+			return nil
+		}
+	}
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -166,7 +183,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, m.Progress.SetPercent(1.0)
 		}
 
-		return m, m.Progress.SetPercent(float64(completed) / float64(total))
+		return m, tea.Batch(m.Progress.SetPercent(float64(completed)/float64(total)), m.listenForUpdates())
 	case spinner.TickMsg:
 		var cmd tea.Cmd
 		m.Spinner, cmd = m.Spinner.Update(msg)
@@ -347,9 +364,6 @@ func (m Model) syncRepositories() tea.Cmd {
 		semaphore := make(chan struct{}, m.Config.MaxConcurrency)
 		var wg sync.WaitGroup
 
-		// Channel to collect status updates
-		statusChan := make(chan repositoryStatusMsg, len(m.Repositories))
-
 		for _, repo := range m.Repositories {
 			wg.Add(1)
 			go func(r Repository) {
@@ -363,6 +377,17 @@ func (m Model) syncRepositories() tea.Cmd {
 					return
 				}
 
+				// Send cloning status first
+				select {
+				case m.statusChan <- repositoryStatusMsg{
+					Name:   r.Name,
+					Status: StatusCloning,
+					Error:  nil,
+				}:
+				case <-m.ctx.Done():
+					return
+				}
+
 				// Sync the repository with retries
 				err := m.syncRepoWithRetry(r.Name)
 
@@ -371,8 +396,9 @@ func (m Model) syncRepositories() tea.Cmd {
 					status = StatusFailed
 				}
 
+				// Send final status
 				select {
-				case statusChan <- repositoryStatusMsg{
+				case m.statusChan <- repositoryStatusMsg{
 					Name:   r.Name,
 					Status: status,
 					Error:  err,
@@ -386,23 +412,11 @@ func (m Model) syncRepositories() tea.Cmd {
 		// Close status channel when all goroutines complete
 		go func() {
 			wg.Wait()
-			close(statusChan)
+			close(m.statusChan)
 		}()
 
-		// Return the first status update
-		select {
-		case status := <-statusChan:
-			// Start a goroutine to handle remaining updates
-			go func() {
-				for status := range statusChan {
-					// Send remaining updates (this is a simplified approach)
-					_ = status
-				}
-			}()
-			return status
-		case <-m.ctx.Done():
-			return repositoryStatusMsg{Name: "", Status: StatusFailed, Error: m.ctx.Err()}
-		}
+		// Don't return anything - let the listener handle updates
+		return nil
 	}
 }
 
