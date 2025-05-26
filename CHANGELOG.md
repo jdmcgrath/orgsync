@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.3.0](https://github.com/jdmcgrath/orgsync/compare/v1.2.0...v1.3.0) (2025-05-26)
+
+
+### Features
+
+* implement automatic releases without manual PR merging ([14615b4](https://github.com/jdmcgrath/orgsync/commit/14615b4e9ddc84c9d1e323b131b9fa723aa24593))
+
+
+### Bug Fixes
+
+* properly extract PR number from release-please output for auto-merge ([efd0c91](https://github.com/jdmcgrath/orgsync/commit/efd0c9156ee86a955c89786ab6b095cf3aa3b709))
+
 ## [1.2.0](https://github.com/jdmcgrath/orgsync/compare/v1.1.0...v1.2.0) (2025-05-26)
 
 
