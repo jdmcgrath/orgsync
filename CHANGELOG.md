@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.5.0](https://github.com/jdmcgrath/orgsync/compare/v1.4.0...v1.5.0) (2025-05-26)
+
+
+### Features
+
+* enhance repository status tests and add failure count functionality ([5837467](https://github.com/jdmcgrath/orgsync/commit/5837467fb480f2741834768a3580dd126fb5cddd))
+* Update go mod ([c10e0cf](https://github.com/jdmcgrath/orgsync/commit/c10e0cf9d864675875ad43f9442f0b6c28a2d93b))
+
 ## [1.4.0](https://github.com/jdmcgrath/orgsync/compare/v1.3.0...v1.4.0) (2025-05-26)
 
 
