@@ -10,6 +10,8 @@ import (
 	"github.com/jdmcgrath/orgsync/sync"
 )
 
+const version = "2.0.0"
+
 func main() {
 	// Define flags
 	var (
