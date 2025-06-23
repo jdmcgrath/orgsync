@@ -49,8 +49,24 @@ orgsync <your-github-org>
 ```bash
 orgsync openai
 ```
+
+### Test Mode
+Run OrgSync in test mode to see the UI without creating actual repositories:
+```bash
+# Default test mode (20 repos)
+orgsync --test test-org
+
+# Custom test scenarios
+orgsync --test --test-repos=50 --test-fail-rate=0.15 test-org
+
+# Run the interactive test script
+./test-ui.sh
+```
+
 #### Notes
-- The tool will display progress in your terminal and allow you to quit with q.
+- The tool will display progress in your terminal
+- Press 'q' to quit at any time
+- Press 'c' to toggle showing completed repositories
 
 ## Development
 ### Running locally
