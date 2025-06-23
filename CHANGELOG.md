@@ -2,6 +2,22 @@
 
 ## [2.0.0](https://github.com/jdmcgrath/orgsync/compare/v1.7.0...v2.0.0) (2025-06-23)
 
+
+### ⚠ BREAKING CHANGES
+
+* Complete UI rewrite using ASCII-only characters for better terminal compatibility. Previous versions used Unicode characters that may not render correctly in all terminals.
+
+### Features
+
+* add version constant and complete UI rewrite ([6d0c658](https://github.com/jdmcgrath/orgsync/commit/6d0c6582087d3ab78684e99dd687a837aa98b6b1))
+
+
+### Reverts
+
+* restore manifest to 1.7.0 ([a9e663d](https://github.com/jdmcgrath/orgsync/commit/a9e663ddcbe43be0fedaadeac1428d249cc73162))
+
+## [2.0.0](https://github.com/jdmcgrath/orgsync/compare/v1.7.0...v2.0.0) (2025-06-23)
+
 ### ⚠ BREAKING CHANGES
 
 * UI now uses ASCII characters instead of Unicode for better compatibility
