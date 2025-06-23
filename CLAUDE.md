@@ -96,3 +96,4 @@ This project uses conventional commits and automated releases:
 - Default concurrency is 5 repos - can be adjusted in `config` struct
 - UI width adapts between 80-140 characters
 - Color gradients are defined in `getGradientColors()` for visual appeal
+- Test mode allows UI testing without creating actual repositories
