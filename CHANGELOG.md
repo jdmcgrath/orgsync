@@ -1,5 +1,28 @@
 # Changelog
 
+## [2.0.0](https://github.com/jdmcgrath/orgsync/compare/v1.7.0...v2.0.0) (2025-06-23)
+
+### ⚠ BREAKING CHANGES
+
+* UI now uses ASCII characters instead of Unicode for better compatibility
+
+### Features
+
+* enhance UI with professional animations and test mode ([f1bf4f5](https://github.com/jdmcgrath/orgsync/commit/f1bf4f5))
+  - Add test mode (--test flag) to simulate operations without creating repos
+  - Replace Unicode characters with ASCII for better terminal compatibility
+  - Implement fixed-width columns with proper left alignment
+  - Add professional animations: rotating spinner for pending, clean progress bars
+  - Remove distracting emoji animations from header
+  - Add elapsed time, ETA, and transfer speed indicators
+  - Improve error messages with actionable hints
+  - Add ability to toggle completed repos visibility (press 'c')
+  - Create test scripts for easy UI demonstration
+
+### Documentation
+
+* add test mode note to CLAUDE.md ([b500256](https://github.com/jdmcgrath/orgsync/commit/b500256))
+
 ## [1.7.0](https://github.com/jdmcgrath/orgsync/compare/v1.6.0...v1.7.0) (2025-05-26)
 
 
