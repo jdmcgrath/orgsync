@@ -1,4 +1,4 @@
-module github.com/jdmcgrath/orgsync
+module github.com/jdmcgrath/orgsync/v2
 
 go 1.24.3
 

@@ -8,10 +8,10 @@ import (
 	"os/exec"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/jdmcgrath/orgsync/sync"
+	"github.com/jdmcgrath/orgsync/v2/sync"
 )
 
-const version = "2.0.0"
+const version = "2.1.1"
 
 func main() {
 	// Define flags
