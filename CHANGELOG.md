@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.1.1](https://github.com/jdmcgrath/orgsync/compare/v2.1.0...v2.1.1) (2025-09-12)
+
+
+### Bug Fixes
+
+* update module path to v2 for proper Go modules versioning ([dbe1143](https://github.com/jdmcgrath/orgsync/commit/dbe11434da02efcba0b64269c87e7d669aecedd8))
+
 ## [2.1.0](https://github.com/jdmcgrath/orgsync/compare/v2.0.0...v2.1.0) (2025-09-12)
 
 
