@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/exec"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/jdmcgrath/orgsync/sync"
@@ -68,6 +69,18 @@ func main() {
 		log.Fatalf("Error: organization name must not be empty")
 	}
 
+	// Validate test fail rate
+	if testFailRate < 0.0 || testFailRate > 1.0 {
+		log.Fatalf("Error: test-fail-rate must be between 0.0 and 1.0, got %f", testFailRate)
+	}
+
+	// Check if gh CLI is installed and authenticated (skip in test mode)
+	if !testMode {
+		if err := checkGHCLI(); err != nil {
+			log.Fatalf("Error: %v", err)
+		}
+	}
+
 	// Log the start of the synchronization process
 	log.Printf("Starting synchronization for organization: %s\n", org)
 	if testMode {
@@ -92,4 +105,20 @@ func main() {
 
 	// Log the completion of the synchronization process
 	log.Printf("Synchronization completed for organization: %s\n", org)
+}
+
+// checkGHCLI verifies that the GitHub CLI is installed and authenticated
+func checkGHCLI() error {
+	// Check if gh is installed
+	if _, err := exec.LookPath("gh"); err != nil {
+		return fmt.Errorf("GitHub CLI (gh) is not installed. Please install it from https://cli.github.com/")
+	}
+
+	// Check if gh is authenticated
+	cmd := exec.Command("gh", "auth", "status")
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("GitHub CLI is not authenticated. Please run 'gh auth login' to authenticate")
+	}
+
+	return nil
 }

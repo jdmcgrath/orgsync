@@ -101,6 +101,8 @@ type Model struct {
 	TestMode      bool
 	TestRepoCount int
 	TestFailRate  float64
+	// Mutex for thread-safe access
+	mu            sync.RWMutex
 }
 
 const (
@@ -334,6 +336,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 	case animationTickMsg:
+		// Stop animation if sync is done to prevent cycling completion messages
+		if m.Done {
+			return m, nil
+		}
 		m.AnimationTick++
 		m.LastUpdate = time.Now()
 		return m, m.animationTick()
@@ -353,7 +359,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		return m, nil
 	case repositoriesFetchedMsg:
+		m.mu.Lock()
 		m.Repositories = msg.Repositories
+		m.mu.Unlock()
 		return m, m.syncRepositories()
 	case repositoryStatusMsg:
 		m.updateRepositoryStatus(msg.Name, msg.Status, msg.Error)
@@ -672,6 +680,7 @@ func (m Model) renderCompactTable() string {
 	}
 
 	// Count repositories by status
+	m.mu.RLock()
 	activeRepos := 0
 	completedRepos := 0
 	for _, repo := range m.Repositories {
@@ -681,12 +690,14 @@ func (m Model) renderCompactTable() string {
 			activeRepos++
 		}
 	}
+	m.mu.RUnlock()
 
 	if activeRepos == 0 && !m.ShowCompleted {
 		return accentText.Render("🎯 All repositories processed!")
 	}
 
 	// Prioritize repos by activity level
+	m.mu.RLock()
 	var displayRepos []Repository
 	maxDisplay := 8
 
@@ -719,6 +730,7 @@ func (m Model) renderCompactTable() string {
 			}
 		}
 	}
+	m.mu.RUnlock()
 
 	if len(displayRepos) == 0 {
 		return ""
@@ -844,17 +856,11 @@ func (m *Model) generateCelebration() string {
 		}
 	}
 
-	// Animated celebration with different messages based on success rate
+	// Static celebration message when done (no animation cycling)
 	successRate := float64(completed) / float64(total)
 	
 	if failed == 0 {
-		celebrations := []string{
-			"🎉 Perfect! All %d repositories synchronized successfully! 🎉",
-			"🌟 Flawless! %d repositories synced without errors! 🌟",
-			"🏆 Champion! %d repositories completed perfectly! 🏆",
-			"✨ Excellent! All %d repositories are up to date! ✨",
-		}
-		return fmt.Sprintf(celebrations[m.AnimationTick%len(celebrations)], completed)
+		return fmt.Sprintf("🎉 Perfect! All %d repositories synchronized successfully! 🎉", completed)
 	} else if successRate >= 0.8 {
 		return fmt.Sprintf("🎯 Great job! %d/%d successful (%.0f%%) • %d need attention",
 			completed, total, successRate*100, failed)
@@ -883,6 +889,9 @@ type repositoryStatusMsg struct {
 
 // Helper methods
 func (m *Model) updateRepositoryStatus(name string, status RepositoryStatus, err error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	
 	for i := range m.Repositories {
 		if m.Repositories[i].Name == name {
 			m.Repositories[i].Status = status
@@ -948,6 +957,9 @@ func (m *Model) formatDuration(repo Repository) string {
 }
 
 func (m *Model) countCompleted() int {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	
 	count := 0
 	for _, repo := range m.Repositories {
 		if repo.Status == StatusCompleted || repo.Status == StatusFailed {
@@ -958,6 +970,9 @@ func (m *Model) countCompleted() int {
 }
 
 func (m *Model) countFailed() int {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	
 	count := 0
 	for _, repo := range m.Repositories {
 		if repo.Status == StatusFailed {
@@ -968,6 +983,9 @@ func (m *Model) countFailed() int {
 }
 
 func (m *Model) countActive() int {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	
 	count := 0
 	for _, repo := range m.Repositories {
 		if repo.Status == StatusCloning || repo.Status == StatusFetching {
@@ -997,6 +1015,9 @@ func (m *Model) getNetworkIndicator() string {
 }
 
 func (m *Model) getTransferInfo() string {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	
 	totalSpeed := float64(0)
 	activeTransfers := 0
 	for _, repo := range m.Repositories {
@@ -1014,6 +1035,9 @@ func (m *Model) getTransferInfo() string {
 }
 
 func (m *Model) calculateETA() string {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	
 	pending := 0
 	for _, repo := range m.Repositories {
 		if repo.Status == StatusPending {
@@ -1036,6 +1060,7 @@ func (m *Model) calculateETA() string {
 }
 
 func (m *Model) getAverageCompletionTime() time.Duration {
+	// Note: assumes caller already holds lock
 	totalTime := time.Duration(0)
 	completedCount := 0
 	
@@ -1109,7 +1134,9 @@ func stripAnsi(s string) string {
 		}
 		
 		if inEscape {
-			if r == 'm' {
+			// ANSI escape sequences can end with various letters
+			// Common endings: A-Z, a-z (including m, H, J, K, etc.)
+			if (r >= 'A' && r <= 'Z') || (r >= 'a' && r <= 'z') {
 				inEscape = false
 			}
 			continue
@@ -1284,10 +1311,23 @@ func (m *Model) formatProgressColumn(repo Repository, width int) string {
 func (m *Model) renderMiniProgressBar(progress float64) string {
 	// Create clean, professional progress bar [====    ] total 10 chars
 	const innerWidth = 8 // Space inside brackets
+	
+	// Ensure progress is between 0.0 and 1.0 to prevent overflow
+	if progress < 0.0 {
+		progress = 0.0
+	}
+	if progress > 1.0 {
+		progress = 1.0
+	}
+	
 	filled := int(progress * float64(innerWidth))
 	
+	// Double-check bounds
 	if filled > innerWidth {
 		filled = innerWidth
+	}
+	if filled < 0 {
+		filled = 0
 	}
 	
 	// Build the progress bar
@@ -1422,10 +1462,16 @@ func (m Model) syncRepositories() tea.Cmd {
 			}(repo)
 		}
 
-		// Close status channel when all goroutines complete
+		// Close status channel when all goroutines complete or context is cancelled
 		go func() {
 			wg.Wait()
-			close(m.statusChan)
+			// Only close if not already closed due to context cancellation
+			select {
+			case <-m.ctx.Done():
+				// Context was cancelled, channel might already be closed
+			default:
+				close(m.statusChan)
+			}
 		}()
 
 		// Don't return anything - let the listener handle updates
@@ -1625,7 +1671,8 @@ func (m Model) simulateRepoSync(repoName string) error {
 			transferSpeed := float64(1024*1024) * (1 + randFloat()*2) // 1-3 MB/s
 			size := int64(float64(5*1024*1024) * (1 + randFloat()*10)) // 5-50 MB
 			
-			// Update repository progress
+			// Update repository progress (thread-safe)
+			m.mu.Lock()
 			for i := range m.Repositories {
 				if m.Repositories[i].Name == repoName {
 					m.Repositories[i].Progress = progress
@@ -1634,6 +1681,7 @@ func (m Model) simulateRepoSync(repoName string) error {
 					break
 				}
 			}
+			m.mu.Unlock()
 			
 			if time.Now().After(endTime) {
 				break
@@ -1665,9 +1713,13 @@ func (m Model) generateTestError(repoName string) error {
 		"rate limit exceeded",
 	}
 	
+	// Ensure errorIndex is always within bounds
 	errorIndex := int(randFloat() * float64(len(errors)))
 	if errorIndex >= len(errors) {
 		errorIndex = len(errors) - 1
+	}
+	if errorIndex < 0 {
+		errorIndex = 0
 	}
 	
 	return fmt.Errorf("%s: %s", errors[errorIndex], repoName)
