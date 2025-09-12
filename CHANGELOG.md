@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.1.0](https://github.com/jdmcgrath/orgsync/compare/v2.0.0...v2.1.0) (2025-09-12)
+
+
+### Features
+
+* add validation for test fail rate and check GitHub CLI authentication ([a5aaa6f](https://github.com/jdmcgrath/orgsync/commit/a5aaa6fa7469c29b6567dea9ce3ce43231d889dd))
+
 ## [2.0.0](https://github.com/jdmcgrath/orgsync/compare/v1.7.0...v2.0.0) (2025-06-23)
 
 
