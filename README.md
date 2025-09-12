@@ -10,7 +10,7 @@ A command-line tool that keeps all repositories in a GitHub organization or from
 - **Concurrency:** Syncs all repositories concurrently for speed.
 
 ## Prerequisites
-- [Go](https://golang.org/dl/) (version 1.22.2 or later)
+- [Go](https://golang.org/dl/) (version 1.24.3 or later)
 - [GitHub CLI (`gh`)](https://cli.github.com/)
 - Git (installed and available in your PATH)
 
@@ -18,7 +18,7 @@ A command-line tool that keeps all repositories in a GitHub organization or from
 
 ### Quick Install (Recommended)
 ```bash
-go install github.com/jdmcgrath/orgsync@latest
+go install github.com/jdmcgrath/orgsync/v2@latest
 ```
 
 ### Prerequisites
@@ -81,7 +81,7 @@ go get ./...
 ```
 3. Build and run
 ```bash
-go run ./cmd/orgsync <your-github-org>
+go run . <your-github-org>
 ```
 
 ### Contributing

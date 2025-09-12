@@ -56,4 +56,4 @@ When you push to the `main` branch:
 2. Determine the next version based on conventional commits
 3. Create a release PR with updated changelog
 4. Once merged, automatically create a Git tag and GitHub release
-5. The new version will be available via `go install github.com/jdmcgrath/orgsync@latest` 
+5. The new version will be available via `go install github.com/jdmcgrath/orgsync/v2@latest` 
