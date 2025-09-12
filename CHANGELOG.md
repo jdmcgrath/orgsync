@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.2.0](https://github.com/jdmcgrath/orgsync/compare/v2.1.1...v2.2.0) (2025-09-12)
+
+
+### Features
+
+* add VHS demo script for OrgSync ([0e0bd26](https://github.com/jdmcgrath/orgsync/commit/0e0bd26fef997f7d12fe514389cb90836a94b217))
+
 ## [2.1.1](https://github.com/jdmcgrath/orgsync/compare/v2.1.0...v2.1.1) (2025-09-12)
 
 
