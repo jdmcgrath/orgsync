@@ -38,6 +38,7 @@ const (
 	StatusPending RepositoryStatus = iota
 	StatusCloning
 	StatusFetching
+	StatusResetting
 	StatusCompleted
 	StatusFailed
 )
@@ -50,6 +51,8 @@ func (s RepositoryStatus) String() string {
 		return "📥 Cloning"
 	case StatusFetching:
 		return "🔄 Fetching"
+	case StatusResetting:
+		return "🔃 Resetting"
 	case StatusCompleted:
 		return "✅ Completed"
 	case StatusFailed:
@@ -97,6 +100,8 @@ type Model struct {
 	LastUpdate     time.Time
 	NetworkStatus  NetworkStatus
 	ShowCompleted  bool
+	// Reset mode - checkout and hard reset to default branch
+	ResetMode bool
 	// Test mode fields
 	TestMode      bool
 	TestRepoCount int
@@ -528,7 +533,7 @@ func (m Model) buildActiveSyncView() string {
 
 	for _, repo := range m.Repositories {
 		switch repo.Status {
-		case StatusCloning, StatusFetching:
+		case StatusCloning, StatusFetching, StatusResetting:
 			activeCount++
 		case StatusPending:
 			pendingCount++
@@ -557,10 +562,12 @@ func (m Model) buildActiveSyncView() string {
 	// Current operations info
 	var currentOps []string
 	for _, repo := range m.Repositories {
-		if repo.Status == StatusCloning || repo.Status == StatusFetching {
+		if repo.Status == StatusCloning || repo.Status == StatusFetching || repo.Status == StatusResetting {
 			opType := "Cloning"
 			if repo.Status == StatusFetching {
 				opType = "Fetching"
+			} else if repo.Status == StatusResetting {
+				opType = "Resetting"
 			}
 			duration := time.Since(repo.StartTime)
 			currentOps = append(currentOps, fmt.Sprintf("%s %s (%s)", opType, repo.Name, formatDuration(duration)))
@@ -701,9 +708,9 @@ func (m Model) renderCompactTable() string {
 	var displayRepos []Repository
 	maxDisplay := 8
 
-	// Priority 1: Currently active (cloning/fetching)
+	// Priority 1: Currently active (cloning/fetching/resetting)
 	for _, repo := range m.Repositories {
-		if (repo.Status == StatusCloning || repo.Status == StatusFetching) && len(displayRepos) < maxDisplay {
+		if (repo.Status == StatusCloning || repo.Status == StatusFetching || repo.Status == StatusResetting) && len(displayRepos) < maxDisplay {
 			displayRepos = append(displayRepos, repo)
 		}
 	}
@@ -814,6 +821,8 @@ func (m *Model) formatStatusSimple(repo Repository) string {
 		return "Cloning"
 	case StatusFetching:
 		return "Fetching"
+	case StatusResetting:
+		return "Resetting"
 	case StatusCompleted:
 		return "Completed"
 	case StatusFailed:
@@ -898,7 +907,7 @@ func (m *Model) updateRepositoryStatus(name string, status RepositoryStatus, err
 			m.Repositories[i].Error = err
 			m.Repositories[i].LastStatusTime = time.Now()
 
-			if status == StatusCloning || status == StatusFetching {
+			if status == StatusCloning || status == StatusFetching || status == StatusResetting {
 				if m.Repositories[i].StartTime.IsZero() {
 					m.Repositories[i].StartTime = time.Now()
 				}
@@ -923,6 +932,8 @@ func (m *Model) formatStatus(repo Repository) string {
 		return statusActiveStyle.Render("Cloning")
 	case StatusFetching:
 		return statusActiveStyle.Render("Fetching")
+	case StatusResetting:
+		return statusActiveStyle.Render("Resetting")
 	case StatusCompleted:
 		return statusSuccessStyle.Render("Completed")
 	case StatusFailed:
@@ -988,7 +999,7 @@ func (m *Model) countActive() int {
 	
 	count := 0
 	for _, repo := range m.Repositories {
-		if repo.Status == StatusCloning || repo.Status == StatusFetching {
+		if repo.Status == StatusCloning || repo.Status == StatusFetching || repo.Status == StatusResetting {
 			count++
 		}
 	}
@@ -1021,7 +1032,7 @@ func (m *Model) getTransferInfo() string {
 	totalSpeed := float64(0)
 	activeTransfers := 0
 	for _, repo := range m.Repositories {
-		if repo.Status == StatusCloning || repo.Status == StatusFetching {
+		if repo.Status == StatusCloning || repo.Status == StatusFetching || repo.Status == StatusResetting {
 			totalSpeed += repo.TransferSpeed
 			activeTransfers++
 		}
@@ -1188,6 +1199,9 @@ func (m *Model) getRepoIcon(repo Repository) string {
 	case StatusFetching:
 		// Static sync symbol
 		return "~ "
+	case StatusResetting:
+		// Reset symbol
+		return "r "
 	case StatusCompleted:
 		return "o "
 	case StatusFailed:
@@ -1206,6 +1220,8 @@ func (m *Model) formatStatusDisplay(repo Repository) string {
 		return "Cloning"
 	case StatusFetching:
 		return "Fetching"
+	case StatusResetting:
+		return "Resetting"
 	case StatusCompleted:
 		return "Done"
 	case StatusFailed:
@@ -1235,7 +1251,7 @@ func (m *Model) formatSize(repo Repository) string {
 func (m *Model) formatProgress(repo Repository) string {
 	// Fixed width progress bars (10 chars to match column)
 	switch repo.Status {
-	case StatusCloning, StatusFetching:
+	case StatusCloning, StatusFetching, StatusResetting:
 		// Animated progress bar
 		return m.renderMiniProgressBar(repo.Progress)
 	case StatusCompleted:
@@ -1259,7 +1275,7 @@ func (m *Model) formatStatusColumn(repo Repository, width int) string {
 	switch repo.Status {
 	case StatusPending:
 		return statusPendingStyle.Render(padded)
-	case StatusCloning, StatusFetching:
+	case StatusCloning, StatusFetching, StatusResetting:
 		return statusActiveStyle.Render(padded)
 	case StatusCompleted:
 		return statusSuccessStyle.Render(padded)
@@ -1291,7 +1307,7 @@ func (m *Model) formatProgressColumn(repo Repository, width int) string {
 	
 	// Apply styling based on status
 	switch repo.Status {
-	case StatusCloning, StatusFetching:
+	case StatusCloning, StatusFetching, StatusResetting:
 		// Pulsing animation for active transfers
 		if m.AnimationTick%10 < 5 {
 			return statusActiveStyle.Render(progress)
@@ -1518,7 +1534,22 @@ func (m Model) syncRepo(repoName string) error {
 	defer cancel()
 
 	if repoExists(repoDir) {
-		return fetchRepo(ctx, repoDir, repoName)
+		if err := fetchRepo(ctx, repoDir, repoName); err != nil {
+			return err
+		}
+		if m.ResetMode {
+			// Send resetting status
+			select {
+			case m.statusChan <- repositoryStatusMsg{
+				Name:   repoName,
+				Status: StatusResetting,
+			}:
+			case <-m.ctx.Done():
+				return m.ctx.Err()
+			}
+			return resetRepo(ctx, repoDir, repoName)
+		}
+		return nil
 	}
 	return cloneRepo(ctx, m.Org, repoName, repoDir)
 }
@@ -1570,6 +1601,55 @@ func fetchRepo(ctx context.Context, repoDir, repo string) error {
 		return fmt.Errorf("failed to fetch %s: %w (%s)", repo, err, stderr.String())
 	}
 	return nil
+}
+
+func resetRepo(ctx context.Context, repoDir, repo string) error {
+	defaultBranch, err := getDefaultBranch(ctx, repoDir)
+	if err != nil {
+		return fmt.Errorf("failed to detect default branch for %s: %w", repo, err)
+	}
+
+	// Checkout the default branch
+	checkoutCmd := exec.CommandContext(ctx, "git", "-C", repoDir, "checkout", defaultBranch)
+	var checkoutStderr bytes.Buffer
+	checkoutCmd.Stderr = &checkoutStderr
+	if err := checkoutCmd.Run(); err != nil {
+		return fmt.Errorf("failed to checkout %s for %s: %w (%s)", defaultBranch, repo, err, checkoutStderr.String())
+	}
+
+	// Hard reset to origin/<default-branch>
+	resetCmd := exec.CommandContext(ctx, "git", "-C", repoDir, "reset", "--hard", "origin/"+defaultBranch)
+	var resetStderr bytes.Buffer
+	resetCmd.Stderr = &resetStderr
+	if err := resetCmd.Run(); err != nil {
+		return fmt.Errorf("failed to reset %s: %w (%s)", repo, err, resetStderr.String())
+	}
+
+	return nil
+}
+
+func getDefaultBranch(ctx context.Context, repoDir string) (string, error) {
+	// Try to read origin/HEAD to detect the default branch
+	cmd := exec.CommandContext(ctx, "git", "-C", repoDir, "rev-parse", "--abbrev-ref", "origin/HEAD")
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	if err := cmd.Run(); err == nil {
+		branch := strings.TrimSpace(out.String())
+		// rev-parse returns "origin/main" -> strip "origin/" prefix
+		if strings.HasPrefix(branch, "origin/") {
+			return strings.TrimPrefix(branch, "origin/"), nil
+		}
+	}
+
+	// Fallback: try common default branch names
+	for _, branch := range []string{"main", "master"} {
+		cmd := exec.CommandContext(ctx, "git", "-C", repoDir, "rev-parse", "--verify", "origin/"+branch)
+		if err := cmd.Run(); err == nil {
+			return branch, nil
+		}
+	}
+
+	return "", fmt.Errorf("could not determine default branch")
 }
 
 func isNonRetryableError(err error) bool {

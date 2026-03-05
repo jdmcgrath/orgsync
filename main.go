@@ -17,6 +17,7 @@ func main() {
 	// Define flags
 	var (
 		help         bool
+		resetMode    bool
 		testMode     bool
 		testRepos    int
 		testFailRate float64
@@ -24,6 +25,7 @@ func main() {
 
 	// Set up flag usage
 	flag.BoolVar(&help, "help", false, "Show this help message")
+	flag.BoolVar(&resetMode, "reset", false, "Reset existing repos to latest origin default branch")
 	flag.BoolVar(&testMode, "test", false, "Run in test mode with simulated operations")
 	flag.IntVar(&testRepos, "test-repos", 20, "Number of test repositories to simulate")
 	flag.Float64Var(&testFailRate, "test-fail-rate", 0.1, "Failure rate for test mode (0.0-1.0)")
@@ -37,6 +39,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "\nExamples:\n")
 		fmt.Fprintf(os.Stderr, "  %s my-org\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "  %s --test test-org              # Run in test mode\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "  %s --reset my-org               # Sync and reset to default branch\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "  %s --test --test-repos=50 test  # Test with 50 repos\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "\nControls:\n")
 		fmt.Fprintf(os.Stderr, "  q - Quit/Cancel\n")
@@ -83,12 +86,16 @@ func main() {
 
 	// Log the start of the synchronization process
 	log.Printf("Starting synchronization for organization: %s\n", org)
+	if resetMode {
+		log.Printf("Reset mode enabled - repos will be reset to latest origin default branch\n")
+	}
 	if testMode {
 		log.Printf("Running in TEST MODE with %d simulated repositories\n", testRepos)
 	}
 
 	// Initialize the model
 	model := sync.NewModel(org)
+	model.ResetMode = resetMode
 	if testMode {
 		model.TestMode = true
 		model.TestRepoCount = testRepos

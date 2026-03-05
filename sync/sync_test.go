@@ -15,6 +15,7 @@ func TestRepositoryStatus_String(t *testing.T) {
 		{StatusPending, "⏳ Pending"},
 		{StatusCloning, "📥 Cloning"},
 		{StatusFetching, "🔄 Fetching"},
+		{StatusResetting, "🔃 Resetting"},
 		{StatusCompleted, "✅ Completed"},
 		{StatusFailed, "❌ Failed"},
 	}
