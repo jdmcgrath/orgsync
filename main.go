@@ -11,12 +11,14 @@ import (
 	"github.com/jdmcgrath/orgsync/v2/sync"
 )
 
-const version = "2.1.1"
+// version is set at build time via ldflags: -ldflags "-X main.version=vX.Y.Z"
+var version = "dev"
 
 func main() {
 	// Define flags
 	var (
 		help         bool
+		showVersion  bool
 		resetMode    bool
 		testMode     bool
 		testRepos    int
@@ -25,6 +27,7 @@ func main() {
 
 	// Set up flag usage
 	flag.BoolVar(&help, "help", false, "Show this help message")
+	flag.BoolVar(&showVersion, "version", false, "Print version and exit")
 	flag.BoolVar(&resetMode, "reset", false, "Reset existing repos to latest origin default branch")
 	flag.BoolVar(&testMode, "test", false, "Run in test mode with simulated operations")
 	flag.IntVar(&testRepos, "test-repos", 20, "Number of test repositories to simulate")
@@ -53,6 +56,12 @@ func main() {
 
 	// Parse arguments
 	flag.Parse()
+
+	// Show version if requested
+	if showVersion {
+		fmt.Printf("orgsync %s\n", version)
+		os.Exit(0)
+	}
 
 	// Show help message if requested
 	if help {

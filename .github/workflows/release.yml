@@ -77,8 +77,40 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           
-      - name: Release Created
+      - name: Set up Go
         if: steps.release.outputs.release_created
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.22'
+
+      - name: Build and upload release binaries
+        if: steps.release.outputs.release_created
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          echo "🎉 Release ${{ steps.release.outputs.tag_name }} created!"
-          echo "Release URL: ${{ steps.release.outputs.html_url }}" 
+          TAG="${{ steps.release.outputs.tag_name }}"
+          echo "Building binaries for ${TAG}..."
+
+          platforms=(
+            "linux/amd64"
+            "linux/arm64"
+            "darwin/amd64"
+            "darwin/arm64"
+            "windows/amd64"
+          )
+
+          for platform in "${platforms[@]}"; do
+            GOOS="${platform%/*}"
+            GOARCH="${platform#*/}"
+            output="orgsync-${GOOS}-${GOARCH}"
+            if [ "$GOOS" = "windows" ]; then
+              output="${output}.exe"
+            fi
+
+            echo "Building ${output}..."
+            GOOS=$GOOS GOARCH=$GOARCH go build -ldflags "-X main.version=${TAG}" -o "${output}" .
+
+            gh release upload "${TAG}" "${output}" --clobber
+          done
+
+          echo "🎉 All binaries uploaded for ${TAG}!"
