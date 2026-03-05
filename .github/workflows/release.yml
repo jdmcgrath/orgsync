@@ -39,22 +39,50 @@ jobs:
         id: release
         with:
           release-type: go
+          skip-github-release: true
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Go
-        if: steps.release.outputs.release_created
         uses: actions/setup-go@v4
         with:
           go-version: '1.26'
 
-      - name: Build and upload release binaries
-        if: steps.release.outputs.release_created
+      - name: Create release and build binaries
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          TAG="${{ steps.release.outputs.tag_name }}"
-          echo "Building binaries for ${TAG}..."
+          # Read version from manifest
+          VERSION=$(cat .release-please-manifest.json | jq -r '."."')
+          TAG="v${VERSION}"
 
+          # Check if this release already exists
+          if gh release view "$TAG" &>/dev/null; then
+            echo "Release ${TAG} already exists, skipping."
+            exit 0
+          fi
+
+          # Only create a release if HEAD is a release commit
+          HEAD_MSG=$(git log -1 --format=%s)
+          if [[ "$HEAD_MSG" != chore\(main\):\ release* ]]; then
+            echo "HEAD is not a release commit, skipping release creation."
+            echo "HEAD message: ${HEAD_MSG}"
+            exit 0
+          fi
+
+          echo "Creating release ${TAG}..."
+
+          # Generate release notes from CHANGELOG
+          CHANGELOG_ENTRY=$(sed -n "/^## \[${VERSION}\]/,/^## \[/p" CHANGELOG.md | sed '$ d')
+          if [ -z "$CHANGELOG_ENTRY" ]; then
+            CHANGELOG_ENTRY="Release ${TAG}"
+          fi
+
+          # Create the release at HEAD (which is the release commit)
+          echo "$CHANGELOG_ENTRY" | gh release create "$TAG" --title "$TAG" --notes-file -
+
+          echo "Release ${TAG} created! Building binaries..."
+
+          # Set up Go and build binaries
           platforms=(
             "linux/amd64"
             "linux/arm64"
@@ -77,4 +105,4 @@ jobs:
             gh release upload "${TAG}" "${output}" --clobber
           done
 
-          echo "🎉 All binaries uploaded for ${TAG}!"
+          echo "All binaries uploaded for ${TAG}!"
