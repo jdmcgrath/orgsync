@@ -1,5 +1,6 @@
 {
   "release-type": "go",
+  "last-release-sha": "16ff0c23dba22b0d0fd3fc372f5a6564343f23e9",
   "packages": {
     ".": {
       "package-name": "orgsync",
