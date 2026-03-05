@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.3.0](https://github.com/jdmcgrath/orgsync/compare/v2.2.0...v2.3.0) (2026-03-05)
+
+
+### Features
+
+* add --reset flag to checkout and hard reset repos to default branch ([2655399](https://github.com/jdmcgrath/orgsync/commit/26553991d514ac49ed58de0da7a826eb155d0376))
+
 ## [2.2.0](https://github.com/jdmcgrath/orgsync/compare/v2.1.1...v2.2.0) (2025-09-12)
 
 
