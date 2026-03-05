@@ -1,6 +1,6 @@
 module github.com/jdmcgrath/orgsync/v2
 
-go 1.24.3
+go 1.26.0
 
 require (
 	github.com/charmbracelet/bubbles v0.21.0
